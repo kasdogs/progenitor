@@ -1,1 +1,124 @@
-progenitor placeholder
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Progenitor</title>
+<meta name="description" content="A semi-modular analog synthesizer voice for the browser: two oscillators, ladder filter, spring reverb, 41 patch points, arpeggiator and sequencer.">
+<meta name="theme-color" content="#161412">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%23ebe2cd%22/%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%229%22 fill=%22%2326211d%22/%3E%3Cpath d=%22M16 16 11 10%22 stroke=%22%23ebe2cd%22 stroke-width=%222.5%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand"><span class="wm">PROGENITOR</span><span class="sub">semi-modular analog voice</span></div>
+  <div class="patchbox">
+    <select id="patchSel" aria-label="Patch"></select>
+    <button id="btnSave" title="Save patch">Save</button>
+    <button id="btnMore" title="More patch options" aria-haspopup="true">⋯</button>
+    <div id="moreMenu" class="menu" hidden>
+      <button data-act="saveas">Save as new…</button>
+      <button data-act="export">Export patch file</button>
+      <button data-act="import">Import patch file…</button>
+      <button data-act="delete">Delete this patch</button>
+      <button data-act="clear">Pull all cables</button>
+      <button data-act="seqclear">Clear current sequence</button>
+    </div>
+    <input id="fileIn" type="file" accept=".json,application/json" hidden>
+  </div>
+  <canvas id="scope" width="240" height="64" aria-label="Output scope"></canvas>
+  <div class="tools">
+    <button id="btnCables" title="Cable visibility">Cables: show</button>
+    <button id="btnMidi" title="MIDI devices">MIDI</button>
+    <button id="btnSettings" title="Global settings">Settings</button>
+    <button id="btnHelp" title="How to use">?</button>
+    <button id="btnPower" class="power" title="Power">⏻</button>
+  </div>
+</header>
+
+<main id="wrap">
+  <div id="panel">
+    <svg id="cables" aria-hidden="true"></svg>
+  </div>
+</main>
+
+<section id="deck">
+  <div id="gsBanner" hidden></div>
+  <div id="lhcWrap"></div>
+  <div id="whWrap"></div>
+  <div id="kbScroll">
+    <button class="kbnav" id="kbLeft" aria-label="Scroll keys left">‹</button>
+    <div id="kbOuter"><div id="keyboard"></div></div>
+    <button class="kbnav" id="kbRight" aria-label="Scroll keys right">›</button>
+  </div>
+</section>
+
+<div id="tip" hidden></div>
+<div id="toast" hidden></div>
+
+<div id="powerOverlay">
+  <div class="po-card">
+    <div class="wm big">PROGENITOR</div>
+    <p>Two oscillators, a transistor-ladder filter, spring reverb, 41 patch points, arpeggiator and sequencer.</p>
+    <button id="powerOn">Power on</button>
+    <p class="small">Plays with no cables. Drag between jacks to patch. Press ? for the guide.</p>
+  </div>
+</div>
+
+<dialog id="dlgSettings">
+  <form method="dialog">
+    <h2>Global settings</h2>
+    <p class="small">These are also reachable from the panel: hold HOLD and press SYNC, then use the black keys to pick a setting and white keys to set it.</p>
+    <div id="settingsList"></div>
+    <h3>Emulation</h3>
+    <div id="emuList"></div>
+    <menu><button value="close">Done</button></menu>
+  </form>
+</dialog>
+
+<dialog id="dlgMidi">
+  <form method="dialog">
+    <h2>MIDI</h2>
+    <p id="midiStatus" class="small">Not connected.</p>
+    <label>Input <select id="midiIn"></select></label>
+    <label>Output <select id="midiOut"></select></label>
+    <p class="small">Channel and clock behaviour are in Settings. Notes, pitch bend, mod wheel, sustain, clock and the documented CC map are received.</p>
+    <menu><button value="close">Done</button></menu>
+  </form>
+</dialog>
+
+<dialog id="dlgHelp">
+  <form method="dialog">
+    <h2>Using Progenitor</h2>
+    <div class="help">
+      <h3>Playing</h3>
+      <p>Click or touch the keys (lower on the key plays louder), or use the computer keyboard: <b>A W S E D F T G Y H U J K O L P ;</b>. <b>Z</b> / <b>X</b> shift the computer keys by an octave; <b>&lt;KB</b> and <b>KB&gt;</b> transpose the keyboard itself.</p>
+      <h3>Knobs</h3>
+      <p>Drag up/down (or sideways). Hold <b>Shift</b> for very fine adjustment; on touch screens, tap the panel's <b>SHIFT</b> button to latch it. Double-click resets. The mouse wheel and arrow keys also work.</p>
+      <h3>Patching</h3>
+      <p>Drag from one jack to another. Or tap a jack, then tap its destination. Tap a patched jack, or drag its plug into empty space, to pull a cable. Outputs have dark labels and can feed several cables. Patching into an input overrides the internal connection behind it, just like the hardware's normalled routing. The four <b>MULT</b> jacks are wired together.</p>
+      <h3>Arpeggiator and sequencer</h3>
+      <p>Choose <b>ARP</b> or <b>SEQ</b>, press <b>PLAY</b>, then hold notes. <b>HOLD</b> latches. <b>TAP</b> three times sets tempo; hold TAP for a second to leave tap tempo.</p>
+      <p>To record: set <b>REC</b>, pick a slot with <b>OCT/SEQ</b>, and play notes. While in REC, PLAY adds a <b>TIE</b>, HOLD adds a <b>REST</b>, TAP sets an <b>ACCENT</b>. Holding one note while pressing the next records legato. Switch back to SEQ and press PLAY. Switching to REC while a sequence plays lets you overwrite steps live.</p>
+      <p>Accents appear at <b>KB VEL OUT</b> while sequencing; patch it to <b>CUTOFF IN</b> to hear them.</p>
+      <h3>Hidden gestures</h3>
+      <p>Hold <b>HOLD</b> and turn <b>GLIDE</b> right/left to switch legato glide on/off. Hold <b>HOLD</b> + press <b>SYNC</b> for global settings. Hold PLAY, HOLD and TAP together for a second to clear stuck notes. Tap the <b>SPRING REVERB</b> title to give the tank a knock.</p>
+    </div>
+    <menu><button value="close">Close</button></menu>
+  </form>
+</dialog>
+
+<dialog id="dlgName">
+  <form method="dialog">
+    <h2>Save patch</h2>
+    <label>Name <input id="nameIn" maxlength="40" autocomplete="off"></label>
+    <menu><button value="cancel">Cancel</button><button value="ok" id="nameOk">Save</button></menu>
+  </form>
+</dialog>
+
+<script src="js/app.js"></script>
+</body>
+</html>
