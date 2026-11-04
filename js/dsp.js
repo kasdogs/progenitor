@@ -33,6 +33,7 @@ function th(x) { // fast tanh
   const x2 = x * x; return x * (27 + x2) / (27 + 9 * x2);
 }
 const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
+const TH08 = th(0.08);
 
 // ---------------------------------------------------------------- oscillator
 // PolyBLEP oscillator with one sample of latency so step corrections can be
@@ -94,20 +95,27 @@ class Osc {
 // 4-pole transistor-ladder model (Huovilainen) with per-stage saturation,
 // run at a further 2x internally on top of the engine's oversampling.
 class Ladder {
-  constructor() { this.y = [0,0,0,0]; this.t = [0,0,0]; this.d4 = 0; this.d5 = 0; }
+  constructor() {
+    this.y = [0,0,0,0]; this.t = [0,0,0]; this.d4 = 0; this.d5 = 0;
+    const r = () => (Math.random() * 2 - 1);
+    this.m = [1 + r() * 0.015, 1 + r() * 0.015, 1 + r() * 0.015, 1 + r() * 0.015];   // per-stage cutoff (caps)
+    this.v = [1 + r() * 0.02, 1 + r() * 0.02, 1 + r() * 0.02, 1 + r() * 0.02];       // per-stage drive (pairs)
+    this.iv = this.v.map(x => 1 / x);
+  }
   process(x, fc, res, fs) {
     const f = fc / (fs * 2), f2 = f * f, f3 = f2 * f;
     const fcr = 1.8730 * f3 + 0.4955 * f2 - 0.6490 * f + 0.9988;
     const acr = -3.9364 * f2 + 1.8409 * f + 0.9968;
     const g = 1 - Math.exp(-TAU * f * fcr);
     const k = 4 * res * acr;
-    const y = this.y, t = this.t;
+    const y = this.y, t = this.t, m = this.m, v = this.v, iv = this.iv;
+    const g0 = g * m[0], g1 = g * m[1], g2 = g * m[2], g3 = g * m[3];
     for (let j = 0; j < 2; j++) {
       const inp = x - k * this.d5 + (Math.random() - 0.5) * 2e-3;
-      y[0] += g * (th(inp) - t[0]); t[0] = th(y[0]);
-      y[1] += g * (t[0] - t[1]);    t[1] = th(y[1]);
-      y[2] += g * (t[1] - t[2]);    t[2] = th(y[2]);
-      y[3] += g * (t[2] - th(y[3]));
+      y[0] += g0 * (th(inp * v[0]) * iv[0] - t[0]); t[0] = th(y[0] * v[1]) * iv[1];
+      y[1] += g1 * (t[0] - t[1]);    t[1] = th(y[1] * v[2]) * iv[2];
+      y[2] += g2 * (t[1] - t[2]);    t[2] = th(y[2] * v[3]) * iv[3];
+      y[3] += g3 * (t[2] - th(y[3] * v[3]) * iv[3]);
       this.d5 = (y[3] + this.d4) * 0.5; this.d4 = y[3];
     }
     return this.d5;
@@ -537,18 +545,21 @@ class Progenitor extends AudioWorkletProcessor {
     this.multSrc = []; this.multV = 0;
     this.g = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bendUp: 2, bendDn: 2, extMode: 0, ppqnIn: 1, ppqnOut: 1,
       kbRange: 0, glideType: 0, gatedGlide: 1, transpose: 0, tapPersist: 0, velRange: 0, o2Range: 7, clkOutMode: 0,
-      drift: 0.5, warm: 0 };
+      drift: 0.5, warm: 0, bleed: 0.3, os: 2 };
     this.o1 = new Osc(); this.o2 = new Osc(); this.lfo = new Osc();
     this.lad = new Ladder(); this.env = new ADSR();
     this.kbr = 0; this.acc = 0; this.accSt = 0;
     this.hpX = 0; this.hpY = 0; this.fmX = 0; this.fmY = 0;
     this.sh = 0; this.prevSync = 0; this.bend = 0;
-    this.dec = new HB();
+    this.dec = new HB(); this.dec4 = new HB(); this.OS = OS;
     this.spr = [new Spring(this.fsB, 0.0337, 4300, 0.62, 44, 0.1), new Spring(this.fsB, 0.0419, 3900, 0.6, 40, 0.7)];
     this.preHpX = 0; this.preHpY = 0; this.preLp = 0; this.revLp = 0;
     this.dcX = 0; this.dcY = 0;
     this.ctl = new Ctl(this);
-    this.drift = [0, 0]; this.driftT = [0, 0]; this.driftN = 0; this.warmT = 0;
+    this.drift = [0, 0]; this.warmT = 0;
+    // three low-passed noise bands per oscillator (~1/f below a few Hz)
+    this.dBands = [0.04, 0.35, 2.5].map(f => { const c = 1 - Math.exp(-TAU * f / this.fsB); return { c, k: Math.sqrt((2 - c) / c) }; });
+    this.dState = [[0, 0, 0], [0, 0, 0]];
     this.evq = [];
     this.scope = new Float32Array(1024); this.scopeI = 0; this.uiT = 0; this.peak = 0;
     this.inited = false; this.power = true;
@@ -594,7 +605,7 @@ class Progenitor extends AudioWorkletProcessor {
       case 'tapx': c.tapExit(); break;
       case 'oct': c.octave(d.d); break;
       case 'semi': c.semi = d.v; break;
-      case 'g': Object.assign(this.g, d.v); break;
+      case 'g': Object.assign(this.g, d.v); if (d.v.os && d.v.os !== this.OS) { this.OS = d.v.os === 4 ? 4 : 2; this.fs = this.fsB * this.OS; } break;
       case 'seqs': c.seqs = d.v; break;
       case 'mclk': c.midiClock(d.k); break;
       case 'sus': c.sustain(d.v); break;
@@ -610,17 +621,19 @@ class Progenitor extends AudioWorkletProcessor {
   process(inputs, outputs) {
     const out = outputs[0], L = out[0], R = out[1];
     const inst = inputs[0] && inputs[0][0];
-    const P = this.P, S = this.S, n = L.length, fs = this.fs, fsB = this.fsB, o = this.outs, c = this.ctl, g = this.g;
+    const P = this.P, S = this.S, n = L.length, fs = this.fs, fsB = this.fsB, o = this.outs, c = this.ctl, g = this.g, os = this.OS;
     for (let i = 0; i < n; i++) {
       // parameter smoothing (~8 ms)
       for (let k = 0; k < S.length; k++) if (!this.disc[k]) S[k] += (P[k] - S[k]) * 0.003;
       c.tick();
 
       // analog drift: slow wandering per oscillator
-      if (--this.driftN <= 0) { this.driftN = fsB * (1 + Math.random() * 2); this.driftT = [Math.random() * 2 - 1, Math.random() * 2 - 1]; }
-      const dc = (g.drift * 4) / 1200;
-      this.drift[0] += (this.driftT[0] * dc - this.drift[0]) * 0.00002;
-      this.drift[1] += (this.driftT[1] * dc - this.drift[1]) * 0.00002;
+      const dc = (g.drift * 3) / 1200;
+      for (let q = 0; q < 2; q++) {
+        const st = this.dState[q];
+        for (let b = 0; b < 3; b++) { const B = this.dBands[b]; st[b] += ((Math.random() * 2 - 1) * 1.732 * B.k - st[b]) * B.c; }
+        this.drift[q] = (st[0] * 0.62 + st[1] * 0.3 + st[2] * 0.08) * dc;
+      }
       let warm = 0;
       if (g.warm) { this.warmT += 1 / fsB; warm = (14 / 1200) * Math.exp(-this.warmT / 75); }
 
@@ -648,7 +661,9 @@ class Progenitor extends AudioWorkletProcessor {
       const res = Math.pow(S[PI.res], 0.85) * 1.07;
       const envAmtK = (S[PI.envAmt] - 0.5) * 2;
       const vcaMode = S[PI.vcaMode];
-      const hpA = Math.exp(-TAU * 20 * Math.pow(500, S[PI.hpf]) / fs);
+      const hpG = Math.tan(Math.PI * Math.min(20 * Math.pow(500, S[PI.hpf]), fs * 0.24) / fs), hpK = hpG / (1 + hpG);
+      const kbrC = 1 - Math.exp(-1 / (0.0008 * fs));
+      const bleed = g.bleed * 0.5;
       const attK = (S[PI.att] - 0.5) * 2;
       const gateV = c.gateNow ? 8 : 0;
       const instV = inst ? inst[i] * S[PI.instGain] * 40 : 0;
@@ -661,7 +676,7 @@ class Progenitor extends AudioWorkletProcessor {
       else o[O.velOut] = g.velRange ? c.vel / 127 * 10 : c.vel / 127 * 10 - 5;
       o[O.clkOut] = c.clkPulse > 0 ? 5 : 0;
 
-      for (let s = 0; s < OS; s++) {
+      for (let s = 0; s < os; s++) {
         // mult (passive: average of everything driving it)
         const ms = this.multSrc;
         if (ms.length) { let a = 0; for (let k = 0; k < ms.length; k++) a += o[ms[k]]; this.multV = a / ms.length; } else this.multV = 0;
@@ -685,22 +700,22 @@ class Progenitor extends AudioWorkletProcessor {
         const trig = this.inp(I.trigIn, gateV) > 2.3;
         const ev = this.env.step(trig, ca, cd, cr, sus);
         o[O.envPOut] = ev * 8; o[O.envNOut] = -ev * 8;
-        this.kbr = trig ? this.kbr + (1 - this.kbr) * 0.02 : this.kbr - this.kbr * cr;
+        this.kbr = trig ? this.kbr + (1 - this.kbr) * kbrC : this.kbr - this.kbr * cr;
 
         // oscillators
         const pwm = this.inp(I.pwmIn, 0) / 5 * 0.45 + ln * wAmt;
         const pm = ln * pAmt;
         const f1 = C4 * Math.pow(2, base1 + pm + this.inp(I.o1Pitch, 0));
-        const y1 = this.o1.step(f1 / fs, w1, clamp(pb1 + pwm, 0.03, 0.97), -1) * 5;
+        const y1 = this.o1.step(f1 / (1 + f1 * 6e-7) / fs, w1, clamp(pb1 + pwm, 0.03, 0.97), -1) * 5;
         const fmIn = this.inp(I.fmIn, 0);
         this.fmY = 0.9995 * (this.fmY + fmIn - this.fmX); this.fmX = fmIn;
         const f2 = C4 * Math.pow(2, base2 + pm + this.inp(I.o2Pitch, 0)) * (1 + this.fmY * 0.25);
-        const y2 = this.o2.step(Math.max(f2, 0) / fs, w2, clamp(pb2 + pwm, 0.03, 0.97), syncOn ? this.o1.wrapT : -1) * 5;
+        const y2 = this.o2.step(Math.max(f2, 0) / (1 + Math.max(f2, 0) * 6e-7) / fs, w2, clamp(pb2 + pwm, 0.03, 0.97), syncOn ? this.o1.wrapT : -1) * 5;
         o[O.o1Out] = y1; o[O.o2Out] = y2;
 
         // mixer (DC coupled, soft saturating)
-        const sum = this.inp(I.mix1In, y1) * m1 + this.inp(I.mix2In, y2) * m2 + this.inp(I.noiseIn, noise) * mN + instV;
-        const mix = 6 * (th(sum / 6 + 0.04) - 0.04);
+        const sum = 7 * (th(this.inp(I.mix1In, y1) * m1 / 7) + th(this.inp(I.mix2In, y2) * m2 / 7) + th(this.inp(I.noiseIn, noise) * mN / 7)) + instV;
+        const mix = 6 * (th(sum / 6 + 0.08) - TH08);
         o[O.mixOut] = mix;
 
         // ladder filter
@@ -717,14 +732,15 @@ class Progenitor extends AudioWorkletProcessor {
           const a = this.inp(I.vcaAmtIn, 0) / 8;
           cvA = vcaMode === 2 ? clamp(a, 0, 1) : cvA * clamp(a, -1, 1);
         }
-        const vca = 8 * th(this.inp(I.vcaIn, vcf) * cvA / 8);
+        const vca = 8 * th(this.inp(I.vcaIn, vcf) * cvA / 8) + cvA * bleed;
 
         // high pass (static, 1-pole)
-        const hx = this.inp(I.hpfIn, 0);
-        this.hpY = hpA * (this.hpY + hx - this.hpX); this.hpX = hx;
-        o[O.hpfOut] = this.hpY;
+        const hx = 9 * th(this.inp(I.hpfIn, 0) / 9);
+        const hv = (hx - this.hpX) * hpK, hl = hv + this.hpX; this.hpX = hl + hv;
+        o[O.hpfOut] = hx - hl;
 
-        this.dec.push(this.inp(I.revIn, vca));
+        const rv = this.inp(I.revIn, vca);
+        if (os === 4) { this.dec4.push(rv); if (s & 1) this.dec.push(this.dec4.out()); } else this.dec.push(rv);
       }
 
       // ---- base rate: spring tank and output stage

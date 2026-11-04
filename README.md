@@ -18,7 +18,15 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
 - **Patch points:** 41 in total.
 - **MIDI:** Web MIDI in and out, covering notes, pitch bend, mod wheel, sustain, clock and the CC map.
 
-The analog core (oscillators, mixer, filter, envelope, VCA) runs 2x oversampled in an AudioWorklet, and the ladder runs at a further 2x internally.
+The analog core (oscillators, mixer, filter, envelope, VCA) runs 2x oversampled in an AudioWorklet (4x selectable in Settings), and the ladder runs at a further 2x internally.
+
+Analog behaviour modelled:
+- per-stage cutoff and drive mismatch in the ladder, randomised per power-on
+- 1/f-style pitch drift per oscillator
+- slight top-octave flattening from the saw core's finite reset time
+- per-channel mixer drive into an asymmetric summing node
+- a small adjustable VCA control bleed (attack thump)
+- a saturating input stage on the high pass
 
 ## Files
 

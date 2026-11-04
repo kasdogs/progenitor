@@ -14,7 +14,7 @@ const DEF = { arpRate: .45, arpMode: 0, arpDir: 0, arpOct: 0, lfoRate: .45, lfoW
   hpf: 0, att: .5, glide: 0, fine: .5, modWheel: 0, instGain: 0, triplet: 0, legato: 0 };
 const GDEF = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bend: 2, extMode: 0, ppqnIn: 1, ppqnOut: 1, kbRange: 0,
   local: 1, glideType: 0, gatedGlide: 1, transpose: 0, tapPersist: 0, velRange: 0, o2Range: 7, clkOutMode: 0, midiOutCh: -1,
-  drift: .5, warm: 0, extGain: .5, cables: 'show' };
+  drift: .5, warm: 0, bleed: .3, os: 2, extGain: .5, cables: 'show' };
 const PPQN = [1,2,3,4,5,6,7,8,9,10,11,12,24,48];
 const DIVN = ['4 whole notes','3 whole notes','2 whole notes','dotted whole','whole','dotted half','half','dotted quarter','quarter',
   'dotted 8th','8th','dotted 16th','16th','dotted 32nd','32nd','dotted 64th','64th'];
@@ -745,7 +745,7 @@ function saveGlobal() { store('global', G); }
 function applyGlobal() {
   post({ t: 'g', v: { midiCh: G.midiCh, midiClkIn: G.midiClkIn, midiClkOut: G.midiClkOut, prio: G.prio, bendUp: G.bend, bendDn: G.bend,
     extMode: G.extMode, ppqnIn: G.ppqnIn, ppqnOut: G.ppqnOut, kbRange: G.kbRange, glideType: G.glideType, gatedGlide: G.gatedGlide,
-    transpose: G.transpose, tapPersist: G.tapPersist, velRange: G.velRange, o2Range: G.o2Range, clkOutMode: G.clkOutMode, drift: G.drift, warm: G.warm } });
+    transpose: G.transpose, tapPersist: G.tapPersist, velRange: G.velRange, o2Range: G.o2Range, clkOutMode: G.clkOutMode, drift: G.drift, warm: G.warm, bleed: G.bleed, os: G.os } });
   post({ t: 'p', k: 'instGain', v: extOn ? G.extGain : 0 });
   saveGlobal(); drawCables();
   $('#btnCables').textContent = 'Cables: ' + G.cables;
@@ -764,6 +764,8 @@ function buildSettings() {
   const opt = (name, k, opts) => { const lab = mk('label', '', E, `<span>${name}</span>`); const s = mk('select', '', lab); opts.forEach(([v, t]) => { const o = mk('option', '', s, t); o.value = v; }); s.value = G[k]; s.addEventListener('change', () => { G[k] = isNaN(+s.value) ? s.value : +s.value; applyGlobal(); }); };
   rng('Oscillator drift', 'drift', 0, 1, .01);
   opt('Cold-start warm-up drift', 'warm', [[0, 'off'], [1, 'on']]);
+  rng('VCA control bleed (attack thump)', 'bleed', 0, 1, .01);
+  opt('Oversampling', 'os', [[2, '2x (lighter on CPU)'], [4, '4x (cleaner FM and sync)']]);
   rng('External input gain', 'extGain', 0, 1, .01);
   opt('Cables', 'cables', [['show', 'show'], ['dim', 'dim'], ['hide', 'hide']]);
 }
