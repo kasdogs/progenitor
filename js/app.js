@@ -9,12 +9,12 @@ const store = (k, v) => { try { localStorage.setItem(LS(k), JSON.stringify(v)); 
 
 // ---------------------------------------------------------------- defaults
 const DEF = { arpRate: .45, arpMode: 0, arpDir: 0, arpOct: 0, lfoRate: .45, lfoWave: 0, pitchAmt: 0, cutoffAmt: 0, pwAmt: 0,
-  o1Oct: 2, o1Wave: 1, sync: 0, o2Oct: 1, o2Freq: .5, o2Wave: 1, mix1: .6, mix2: 0, mixN: 0, cutoff: .62, res: .15,
-  envAmt: .62, kbTrack: 0, attack: 0, decay: .45, sustain: .6, release: .35, volume: .7, vcaMode: 0, revMix: .15,
+  o1Oct: 2, o1Wave: 1, sync: 0, o2Oct: 1, o2Freq: .5, o2Wave: 1, mix1: .6, mix2: 0, mixN: 0, cutoff: 0.673, res: 0.262,
+  envAmt: .62, kbTrack: 0, attack: 0, decay: 0.397, sustain: .6, release: 0.291, volume: .7, vcaMode: 0, revMix: .15,
   hpf: 0, att: .5, glide: 0, fine: .5, modWheel: 0, instGain: 0, triplet: 0, legato: 0 };
 const GDEF = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bend: 2, extMode: 0, ppqnIn: 1, ppqnOut: 1, kbRange: 0,
   local: 1, glideType: 0, gatedGlide: 1, transpose: 0, tapPersist: 0, velRange: 0, o2Range: 7, clkOutMode: 0, midiOutCh: -1,
-  drift: .5, warm: 0, bleed: .3, os: 2, filt: 1, extGain: .5, cables: 'show', scale: 'chromatic', root: 0, mask: Array(12).fill(true) };
+  drift: .5, warm: 0, bleed: .3, os: 2, filt: 1, saw: 1, extGain: .5, cables: 'show', scale: 'chromatic', root: 0, mask: Array(12).fill(true) };
 const PPQN = [1,2,3,4,5,6,7,8,9,10,11,12,24,48];
 const DIVN = ['4 whole notes','3 whole notes','2 whole notes','dotted whole','whole','dotted half','half','dotted quarter','quarter',
   'dotted 8th','8th','dotted 16th','16th','dotted 32nd','32nd','dotted 64th','64th'];
@@ -39,8 +39,8 @@ const FMT = {
   pitchAmt: pct, cutoffAmt: pct, pwAmt: pct,
   o2Freq: v => { const r = state.p.sync ? Math.max(24, G.o2Range * 3) : G.o2Range; const s = (v - .5) * 2 * r; return (s > 0 ? '+' : '') + s.toFixed(2) + ' st'; },
   mix1: dial, mix2: dial, mixN: dial,
-  cutoff: v => fHz(10 * Math.pow(2000, v)), res: pct, envAmt: bip,
-  attack: v => fT(0.001 * Math.pow(10000, v)), decay: v => fT(0.001 * Math.pow(10000, v)), release: v => fT(0.001 * Math.pow(10000, v)),
+  cutoff: v => fHz(10 * Math.pow(1100, v)), res: pct, envAmt: bip,
+  attack: v => fT(0.0015 * Math.pow(8000, v)), decay: v => fT(0.002 * Math.pow(6000, v)), release: v => fT(0.002 * Math.pow(6000, v)),
   sustain: pct, volume: dial, revMix: pct, hpf: v => fHz(20 * Math.pow(500, v)), att: bip,
   glide: v => v < .004 ? 'off' : fT(.002 * Math.pow(2000, v)), fine: v => { const c = Math.round((v - .5) * 200); return (c > 0 ? '+' : '') + c + ' cents'; },
 };
@@ -167,7 +167,19 @@ function setP(id, v, opt = {}) {
   if (opt.send !== false) post({ t: 'p', k: id, v });
   if (opt.save !== false) { clearTimeout(saveT); saveT = setTimeout(autosave, 400); markDirty(); }
 }
-function autosave() { store('current', { p: state.p, cables: state.cables.map(c => [c.a, c.b, c.color]), name: state.name }); }
+function autosave() { store('current', { pv: PATCH_VER, p: state.p, cables: state.cables.map(c => [c.a, c.b, c.color]), name: state.name }); }
+// Patch units changed in version 2 (cutoff knob to ~11 kHz, measured resonance taper,
+// 1.5/2 ms–12 s envelope times). Older patches are converted so they sound the same.
+const PATCH_VER = 2;
+function migrateP(p) {
+  const q = Object.assign({}, p);
+  if (typeof q.cutoff === 'number') q.cutoff = clamp(q.cutoff * Math.log(2000) / Math.log(1100), 0, 1);
+  if (typeof q.res === 'number') q.res = q.res > 0 ? clamp(0.1 + 0.812 * Math.pow(q.res, 0.85), 0, 1) : 0;
+  const tm = (v, t0, r) => clamp(Math.log(0.001 * Math.pow(10000, v) / t0) / Math.log(r), 0, 1);
+  if (typeof q.attack === 'number') q.attack = tm(q.attack, 0.0015, 8000);
+  for (const k of ['decay', 'release']) if (typeof q[k] === 'number') q[k] = tm(q[k], 0.002, 6000);
+  return q;
+}
 
 // fine mode
 const fineKeys = { shift: false, latch: false };
@@ -815,7 +827,7 @@ function saveGlobal() { store('global', G); }
 function applyGlobal() {
   post({ t: 'g', v: { midiCh: G.midiCh, midiClkIn: G.midiClkIn, midiClkOut: G.midiClkOut, prio: G.prio, bendUp: G.bend, bendDn: G.bend,
     extMode: G.extMode, ppqnIn: G.ppqnIn, ppqnOut: G.ppqnOut, kbRange: G.kbRange, glideType: G.glideType, gatedGlide: G.gatedGlide,
-    transpose: G.transpose, tapPersist: G.tapPersist, velRange: G.velRange, o2Range: G.o2Range, clkOutMode: G.clkOutMode, drift: G.drift, warm: G.warm, bleed: G.bleed, os: G.os, filt: G.filt } });
+    transpose: G.transpose, tapPersist: G.tapPersist, velRange: G.velRange, o2Range: G.o2Range, clkOutMode: G.clkOutMode, drift: G.drift, warm: G.warm, bleed: G.bleed, os: G.os, filt: G.filt, saw: G.saw } });
   post({ t: 'p', k: 'instGain', v: extOn ? G.extGain : 0 });
   saveGlobal(); drawCables();
   $('#btnCables').textContent = 'Cables: ' + G.cables;
@@ -835,6 +847,7 @@ function buildSettings() {
   rng('Oscillator drift', 'drift', 0, 1, .01);
   opt('Cold-start warm-up drift', 'warm', [[0, 'off'], [1, 'on']]);
   rng('VCA control bleed (attack thump)', 'bleed', 0, 1, .01);
+  opt('Sawtooth shape', 'saw', [[1, 'measured (Moog Voyager recordings)'], [0, 'ideal ramp']]);
   opt('Filter model', 'filt', [[1, 'zero-delay ladder, Newton solve'], [0, 'Huovilainen ladder (classic)']]);
   opt('Oversampling', 'os', [[2, '2x (lighter on CPU)'], [4, '4x (cleaner FM and sync)']]);
   rng('External input gain', 'extGain', 0, 1, .01);
@@ -1041,7 +1054,8 @@ const PRESETS = [
   { name: 'Velocity Pluck', p: { o1Wave: 3, o2Wave: 1, o2Freq: .505, mix1: .5, mix2: .45, cutoff: .38, res: .35, envAmt: .74, decay: .4, sustain: .1, release: .4, revMix: .25 }, c: [['velOut', 'cutoffIn']] },
   { name: 'Tremolo Organ', p: { o1Wave: 2, o1Oct: 2, o2Wave: 0, o2Oct: 2, mix1: .5, mix2: .5, cutoff: .78, envAmt: .5, attack: .1, sustain: 1, release: .3, lfoRate: .42, vcaMode: 1, revMix: .3 }, c: [['lfoOut', 'vcaAmtIn']] },
 ];
-let userPatches = load('patches', []);
+let userPatches = load('patches', []).map(u => (u.pv >= PATCH_VER ? u : Object.assign({}, u, { p: migrateP(u.p || {}), pv: PATCH_VER })));
+store('patches', userPatches);
 let dirty = false;
 function markDirty() { if (!dirty) { dirty = true; refreshPatchSel(); } }
 function refreshPatchSel() {
@@ -1063,11 +1077,11 @@ function applyPatch(pp, cables, name) {
 }
 $('#patchSel').addEventListener('change', e => {
   const v = e.target.value;
-  if (v[0] === 'f') { const pr = PRESETS[+v.slice(1)]; applyPatch(Object.assign({}, pr.p, pr.extra || {}), pr.c, pr.name); }
+  if (v[0] === 'f') { const pr = PRESETS[+v.slice(1)]; applyPatch(migrateP(Object.assign({}, pr.p, pr.extra || {})), pr.c, pr.name); }
   else if (v[0] === 'u') { const up = userPatches[+v.slice(1)]; applyPatch(up.p, up.cables, up.name); }
   e.target.blur();
 });
-function snapshot(name) { return { name, p: Object.assign({}, state.p), cables: state.cables.map(c => [c.a, c.b, c.color]) }; }
+function snapshot(name) { return { name, pv: PATCH_VER, p: Object.assign({}, state.p), cables: state.cables.map(c => [c.a, c.b, c.color]) }; }
 function askName(def) {
   return new Promise(res => {
     const d = $('#dlgName'), inp = $('#nameIn'); inp.value = def;
@@ -1095,7 +1109,7 @@ more.addEventListener('click', async e => {
   more.hidden = true;
   if (a === 'saveas') savePatch(true);
   if (a === 'export') {
-    const blob = new Blob([JSON.stringify({ format: 'progenitor-patch', version: 1, ...snapshot(state.name), seqs }, null, 1)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ format: 'progenitor-patch', version: 2, ...snapshot(state.name), seqs }, null, 1)], { type: 'application/json' });
     const url = URL.createObjectURL(blob), l = document.createElement('a');
     l.href = url; l.download = state.name.replace(/[^\w-]+/g, '_') + '.json'; l.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -1114,7 +1128,8 @@ $('#fileIn').addEventListener('change', async e => {
   try {
     const j = JSON.parse(await f.text());
     if (!j.p || !Array.isArray(j.cables)) throw new Error('not a patch');
-    const p = {}; for (const k in DEF) if (typeof j.p[k] === 'number') p[k] = j.p[k];
+    let p = {}; for (const k in DEF) if (typeof j.p[k] === 'number') p[k] = j.p[k];
+    if (!(j.pv >= PATCH_VER)) p = migrateP(p);
     applyPatch(p, j.cables.filter(c => Array.isArray(c) && typeof c[0] === 'string' && typeof c[1] === 'string'), String(j.name || 'Imported').slice(0, 40));
     if (Array.isArray(j.seqs) && j.seqs.length === 3 && confirm('This file also contains sequences. Load them too (replaces your current ones)?')) { seqs = j.seqs; post({ t: 'seqs', v: seqs }); store('seqs', seqs); }
     dirty = true; refreshPatchSel();
@@ -1129,7 +1144,7 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = fal
 // ---------------------------------------------------------------- boot
 const cur = load('current', null);
 if (cur && cur.p) {
-  Object.assign(state.p, DEF, cur.p); state.name = cur.name || 'Init';
+  Object.assign(state.p, DEF, cur.pv >= PATCH_VER ? cur.p : migrateP(cur.p)); state.name = cur.name || 'Init';
   (cur.cables || []).forEach(([a, b, col]) => { if (jacks[a] && jacks[b]) state.cables.push({ a, b, color: col || COLORS[0] }); });
   for (const id in ctrls) ctrls[id].render();
 }
