@@ -12,7 +12,7 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
 - **Envelope:** RC-style ADSR. VCA modes are ENV, KB RLS and DRONE.
 - **Modulation:** LFO (sine, saw, ramp, square) from 0.07 Hz to 1.3 kHz, with sync and sample & hold.
 - **Utilities:** a 1-pole high pass, a bipolar attenuator (normalled to +8 V) and a 4-jack passive mult.
-- **Spring reverb:** a dispersive allpass-chain model of two springs with a clipping driver and a ~6 s tail; fully wet at 100% mix. Tap the SPRING REVERB title to knock the tank.
+- **Spring reverb:** a dispersive allpass-chain model of two springs. Tap the SPRING REVERB title to knock the tank.
 - **Arp/Seq:** arpeggiator, and three 256-step sequences with tie, rest, accent and legato. Includes tap tempo, MIDI clock, external clock (or step advance), and clock, reset and on/off jacks.
 - **Global settings:** the documented settings, entered from the panel (hold HOLD + press SYNC, then use the keys) or from the Settings dialog.
 - **Patch points:** 41 in total, with universal patching. Any jack connects to any other and takes multiple cables. Connected jacks form one node: tied outputs average, and an input joined only to other inputs reads 0 V.

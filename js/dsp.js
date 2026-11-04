@@ -218,8 +218,8 @@ class Spring {
     this.ai = 0;
     this.base = len * fs; this.dlen = Math.ceil(this.base * 1.02) + 8;
     this.dl = new Float64Array(this.dlen); this.w = 0;
-    this.lp = 0; this.lpc = 1 - Math.exp(-TAU * 4200 / fs);
-    this.g = -Math.pow(10, -3 * len / 5.8);
+    this.lp = 0; this.lpc = 1 - Math.exp(-TAU * 3600 / fs);
+    this.g = -Math.pow(10, -3 * len / 2.6);
     this.ph = seed; this.phInc = TAU * (0.37 + seed * 0.1) / fs;
   }
   process(x) {
@@ -812,13 +812,13 @@ class Progenitor extends AudioWorkletProcessor {
       const dry = this.dec.out();
       let rx = dry - this.preHpX; this.preHpY = 0.985 * (this.preHpY + rx); this.preHpX = dry;
       this.preLp += (this.preHpY - this.preLp) * 0.45;
-      let drive = th(this.preLp * 0.2) * 5.5;
+      let drive = th(this.preLp * 0.12) * 4;
       if (this.kick) { drive += (Math.random() * 2 - 1) * 30 * this.kick; this.kick *= 0.97; if (this.kick < 0.01) this.kick = 0; }
-      const wet = (this.spr[0].process(drive) + this.spr[1].process(drive * 0.9)) * 1.6;
-      this.revLp += (wet - this.revLp) * 0.55;
+      const wet = (this.spr[0].process(drive) + this.spr[1].process(drive * 0.9)) * 0.9;
+      this.revLp += (wet - this.revLp) * 0.5;
       o[O.revOut] = this.revLp;
       const mx = S[PI.revMix];
-      const mixed = dry * Math.cos(mx * Math.PI / 2) + 6 * th(this.revLp * Math.sin(mx * Math.PI / 2) / 6);
+      const mixed = dry * Math.cos(mx * Math.PI / 2) + this.revLp * Math.sin(mx * Math.PI / 2) * 1.2;
       o[O.euroOut] = clamp(mixed, -5, 5);
       const vol = S[PI.volume];
       let y = mixed * vol * vol / 4;
