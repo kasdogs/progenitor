@@ -34,6 +34,15 @@ function th(x) { // fast tanh
 }
 const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
 const TH08 = th(0.08);
+// Soft knee: linear below the threshold, then tanh into a ceiling. Different
+// knees for each polarity give the asymmetric (even-harmonic) character.
+function knee(x, tp, tn, cp, cn) {
+  if (x > tp) return tp + cp * th((x - tp) / cp);
+  if (x < -tn) return -tn - cn * th((-x - tn) / cn);
+  return x;
+}
+// Mixer channel gain: unity-ish taper up to 80%, then the drive climbs fast.
+const mixGain = k => k + (k > 0.8 ? (k - 0.8) * 6 : 0);
 
 // ---------------------------------------------------------------- oscillator
 // PolyBLEP oscillator with one sample of latency so step corrections can be
@@ -704,7 +713,7 @@ class Progenitor extends AudioWorkletProcessor {
       const base2 = c.cv + (S[PI.o2Oct] - 1) + fineV + bendV + this.drift[1] + warm * 1.3 + (S[PI.o2Freq] - 0.5) * 2 * range / 12;
       const w1 = S[PI.o1Wave], w2 = S[PI.o2Wave];
       const pb1 = w1 === 3 ? 0.14 : 0.5, pb2 = w2 === 3 ? 0.14 : 0.5;
-      const m1 = S[PI.mix1] * 1.5, m2 = S[PI.mix2] * 1.5, mN = S[PI.mixN] * 1.5;
+      const m1 = mixGain(S[PI.mix1]), m2 = mixGain(S[PI.mix2]), mN = mixGain(S[PI.mixN]);
       const cutBase = 3.3219 + 10.966 * S[PI.cutoff];
       const kbt = [0.5, 0, 1][S[PI.kbTrack]];
       const res = Math.pow(S[PI.res], 0.85) * 1.16;
@@ -768,8 +777,10 @@ class Progenitor extends AudioWorkletProcessor {
         o[O.o1Out] = y1; o[O.o2Out] = y2;
 
         // mixer (DC coupled, soft saturating)
-        const sum = 7 * (th(this.inp(I.mix1In, y1) * m1 / 7) + th(this.inp(I.mix2In, y2) * m2 / 7) + th(this.inp(I.noiseIn, noise) * mN / 7)) + instV;
-        const mix = 6 * (th(sum / 6 + 0.08) - TH08);
+        // each channel stays clean to ~4 V (80% on the knob), then overdrives
+        const sum = knee(this.inp(I.mix1In, y1) * m1, 4.3, 4.0, 2.2, 1.8) + knee(this.inp(I.mix2In, y2) * m2, 4.3, 4.0, 2.2, 1.8)
+          + knee(this.inp(I.noiseIn, noise) * mN, 4.3, 4.0, 2.2, 1.8) + instV;
+        const mix = knee(sum, 7.5, 7.0, 2.5, 2.0);
         o[O.mixOut] = mix;
 
         // ladder filter
@@ -777,7 +788,7 @@ class Progenitor extends AudioWorkletProcessor {
         const ea = clamp(envAmtK + this.inp(I.envAmtIn, 0) / 8, -1.5, 1.5);
         const oct = cutBase + kbt * c.cv + ea * ev * 7 + this.inp(I.cutoffIn, 0) + ln * cAmt;
         const fc = clamp(Math.pow(2, oct) * resComp, 5, 22000);
-        const vcf = (g.filt ? this.zdf.process(x * 0.2 + (Math.random() - 0.5) * 2e-3, fc, res, fs) : this.lad.process(x * 0.2, fc, res, fs)) * 5;
+        const vcf = (g.filt ? this.zdf.process(x * 0.12 + (Math.random() - 0.5) * 2e-3, fc, res, fs) : this.lad.process(x * 0.12, fc, res, fs)) * 8.333;
         o[O.vcfOut] = vcf;
 
         // VCA

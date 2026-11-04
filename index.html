@@ -49,10 +49,19 @@
   <div id="gsBanner" hidden></div>
   <div id="lhcWrap"></div>
   <div id="whWrap"></div>
-  <div id="kbScroll">
-    <button class="kbnav" id="kbLeft" aria-label="Scroll keys left">‹</button>
-    <div id="kbOuter"><div id="keyboard"></div></div>
-    <button class="kbnav" id="kbRight" aria-label="Scroll keys right">›</button>
+  <div id="kbCol">
+    <div id="scaleBar">
+      <span class="sbl">SCALE LOCK</span>
+      <select id="scaleSel" aria-label="Scale lock"></select>
+      <select id="rootSel" aria-label="Key"></select>
+      <button id="scaleEdit" title="Click keys to add or remove notes from the custom scale">Edit scale</button>
+      <span id="scaleInfo"></span>
+    </div>
+    <div id="kbScroll">
+      <button class="kbnav" id="kbLeft" aria-label="Scroll keys left">‹</button>
+      <div id="kbOuter"><div id="keyboard"></div></div>
+      <button class="kbnav" id="kbRight" aria-label="Scroll keys right">›</button>
+    </div>
   </div>
 </section>
 
@@ -95,7 +104,7 @@
     <h2>Using Progenitor</h2>
     <div class="help">
       <h3>Playing</h3>
-      <p>Click or touch the keys (lower on the key plays louder), or use the computer keyboard: <b>A W S E D F T G Y H U J K O L P ;</b>. <b>Z</b> / <b>X</b> are the <b>&lt;KB</b> / <b>KB&gt;</b> octave buttons.</p>
+      <p>Click or touch the keys (lower on the key plays louder), or play two octaves from the computer keyboard: the <b>Z</b> row and <b>A</b> row from C3, the <b>Q</b> row and number row from C4 (labels are on the keys). <b>←</b> / <b>→</b> are the <b>&lt;KB</b> / <b>KB&gt;</b> octave buttons. <b>Space</b> is PLAY.</p><p><b>Scale lock</b> (above the keys) snaps every key to the nearest note of the chosen mode and key; <b>Custom</b> lets you click keys to pick the notes. It applies to the panel and computer keyboards, not MIDI input.</p>
       <h3>Knobs</h3>
       <p>Drag up/down (or sideways). Hold <b>Shift</b> for very fine adjustment; on touch screens, tap the panel's <b>SHIFT</b> button to latch it. Double-click resets. The mouse wheel and arrow keys also work.</p>
       <h3>Patching</h3>

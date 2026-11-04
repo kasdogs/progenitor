@@ -14,7 +14,7 @@ const DEF = { arpRate: .45, arpMode: 0, arpDir: 0, arpOct: 0, lfoRate: .45, lfoW
   hpf: 0, att: .5, glide: 0, fine: .5, modWheel: 0, instGain: 0, triplet: 0, legato: 0 };
 const GDEF = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bend: 2, extMode: 0, ppqnIn: 1, ppqnOut: 1, kbRange: 0,
   local: 1, glideType: 0, gatedGlide: 1, transpose: 0, tapPersist: 0, velRange: 0, o2Range: 7, clkOutMode: 0, midiOutCh: -1,
-  drift: .5, warm: 0, bleed: .3, os: 2, filt: 1, extGain: .5, cables: 'show' };
+  drift: .5, warm: 0, bleed: .3, os: 2, filt: 1, extGain: .5, cables: 'show', scale: 'chromatic', root: 0, mask: Array(12).fill(true) };
 const PPQN = [1,2,3,4,5,6,7,8,9,10,11,12,24,48];
 const DIVN = ['4 whole notes','3 whole notes','2 whole notes','dotted whole','whole','dotted half','half','dotted quarter','quarter',
   'dotted 8th','8th','dotted 16th','16th','dotted 32nd','32nd','dotted 64th','64th'];
@@ -595,7 +595,8 @@ function makeWheel(it, m) {
   render();
 }
 // ---------------------------------------------------------------- keyboard
-const KB_LO = 41, KB_HI = 72;
+const KB_LO = 41, KB_HI = 72, QW_BASE = 48;   // computer-key Z = C3 on the panel keyboard
+const KEY_LABELS = ['Z', 'S', 'X', 'D', 'C', 'V', 'G', 'B', 'H', 'N', 'J', 'M', 'Q', '2', 'W', '3', 'E', 'R', '5', 'T', '6', 'Y', '7', 'U', 'I'];
 const kbEl = $('#keyboard'), keyEls = {};
 const isBlack = n => [1, 3, 6, 8, 10].includes(n % 12);
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -609,10 +610,12 @@ const gsName = n => NOTE_NAMES[n % 12] + (Math.floor((n - 41 + 5) / 12)); // pan
     k.dataset.note = n; k.dataset.n = gsName(n);
     if (isBlack(n)) { k.className = 'bkey'; k.style.left = `calc(${wi * ww}% - ${ww * .31}%)`; k.style.width = (ww * .62) + '%'; }
     else { k.className = 'wkey'; wi++; }
+    const lab = KEY_LABELS[n - QW_BASE]; if (lab) k.innerHTML = `<span class="kl">${lab}</span>`;
     kbEl.appendChild(k); keyEls[n] = k;
   }
 })();
 const ptrNote = {};
+let scaleEdit = false;
 function kbPointer(e) {
   const t = document.elementFromPoint(e.clientX, e.clientY);
   const k = t && t.closest && t.closest('#keyboard [data-note]');
@@ -622,7 +625,9 @@ function kbPointer(e) {
   return [+k.dataset.note, vel];
 }
 kbEl.addEventListener('pointerdown', e => {
-  e.preventDefault(); ensurePower(); capture(kbEl, e.pointerId);
+  e.preventDefault();
+  if (scaleEdit && !GS.active) { const [n] = kbPointer(e); if (n !== null) { G.mask[n % 12] = !G.mask[n % 12]; scaleChanged(); } return; }
+  ensurePower(); capture(kbEl, e.pointerId);
   const [n, v] = kbPointer(e); if (n === null) return;
   ptrNote[e.pointerId] = n; keyDown(n, v, 'ptr');
 });
@@ -633,48 +638,115 @@ kbEl.addEventListener('pointermove', e => {
 });
 const ptrEnd = e => { if (!(e.pointerId in ptrNote)) return; if (ptrNote[e.pointerId] !== null) keyUp(ptrNote[e.pointerId], 'ptr'); delete ptrNote[e.pointerId]; };
 kbEl.addEventListener('pointerup', ptrEnd); kbEl.addEventListener('pointercancel', ptrEnd);
-const downCount = {};
-function keyDown(n, vel, from) {
-  downCount[n] = (downCount[n] || 0) + 1;
-  if (keyEls[n]) keyEls[n].classList.add('down');
-  if (downCount[n] > 1) return;
-  if (GS.active) { GS.key(n, true); return; }
-  if (G.local) post({ t: 'on', k: n, v: vel, s: 'kb' });
-  else midiSend([0x90 | outCh(), clamp(n + eng.oct * 12, 0, 127), vel]);
+// Scale lock: same modes and nearest-note snapping (ties go down) as modularaudio's Keys.
+const SCALES = {
+  ionian: [0, 2, 4, 5, 7, 9, 11], dorian: [0, 2, 3, 5, 7, 9, 10], phrygian: [0, 1, 3, 5, 7, 8, 10], lydian: [0, 2, 4, 6, 7, 9, 11],
+  mixolydian: [0, 2, 4, 5, 7, 9, 10], aeolian: [0, 2, 3, 5, 7, 8, 10], locrian: [0, 1, 3, 5, 6, 8, 10],
+};
+const SCALE_OPTS = [['chromatic', 'Off (chromatic)'], ['ionian', 'Ionian (major)'], ['dorian', 'Dorian'], ['phrygian', 'Phrygian'], ['lydian', 'Lydian'],
+  ['mixolydian', 'Mixolydian'], ['aeolian', 'Aeolian (natural minor)'], ['locrian', 'Locrian'], ['custom', 'Custom (pick notes)']];
+function allowedSet() {
+  if (G.scale === 'chromatic' || !G.scale) return null;
+  if (G.scale === 'custom') return new Set(G.mask.map((on, pc) => on ? pc : -1).filter(pc => pc >= 0));
+  return new Set(SCALES[G.scale].map(i => (i + G.root) % 12));
 }
-function keyUp(n, from) {
-  if (!downCount[n]) return;
-  downCount[n]--;
-  if (downCount[n] > 0) return;
+function snapNote(note, allowed) {
+  if (!allowed) return note;
+  if (!allowed.size) return null;
+  for (let d = 0; d < 12; d++) {
+    if (allowed.has(((note - d) % 12 + 12) % 12)) return note - d;
+    if (allowed.has(((note + d) % 12 + 12) % 12)) return note + d;
+  }
+  return note;
+}
+// physical key -> { c: press count, s: the (snapped) note sent to the engine }
+const pressMap = {}, engCount = {};
+const sendOn = (s, vel) => { if (G.local) post({ t: 'on', k: s, v: vel, s: 'kb' }); else midiSend([0x90 | outCh(), clamp(s + eng.oct * 12, 0, 127), vel]); };
+const sendOff = s => { if (G.local) post({ t: 'off', k: s, s: 'kb' }); else midiSend([0x80 | outCh(), clamp(s + eng.oct * 12, 0, 127), 0]); };
+function keyDown(n, vel) {
+  const pm = pressMap[n] || (pressMap[n] = { c: 0, s: null, gs: false });
+  pm.c++; if (keyEls[n]) keyEls[n].classList.add('down');
+  if (pm.c > 1) return;
+  if (GS.active) { pm.gs = true; GS.key(n, true); return; }
+  const s = snapNote(n, allowedSet()); pm.s = s;
+  if (s === null) return;
+  engCount[s] = (engCount[s] || 0) + 1;
+  if (engCount[s] === 1) sendOn(s, vel);
+}
+function keyUp(n) {
+  const pm = pressMap[n]; if (!pm || !pm.c) return;
+  if (--pm.c > 0) return;
   if (keyEls[n]) keyEls[n].classList.remove('down');
-  if (GS.active) { GS.key(n, false); return; }
-  if (G.local) post({ t: 'off', k: n, s: 'kb' });
-  else midiSend([0x80 | outCh(), clamp(n + eng.oct * 12, 0, 127), 0]);
+  delete pressMap[n];
+  if (pm.gs) { GS.key(n, false); return; }
+  const s = pm.s; if (s === null || !engCount[s]) return;
+  if (--engCount[s] === 0) { delete engCount[s]; sendOff(s); }
 }
-function keysUp() { for (const n in downCount) { downCount[n] = 0; if (keyEls[n]) keyEls[n].classList.remove('down'); } }
+function keysUp() {
+  for (const n in pressMap) delete pressMap[n];
+  for (const s in engCount) delete engCount[s];
+  for (const n in keyEls) keyEls[n].classList.remove('down');
+}
+function paintScale() {
+  const set = allowedSet();
+  for (const n in keyEls) {
+    const pc = n % 12, k = keyEls[n];
+    k.classList.toggle('oos', !!set && !set.has(pc));
+    k.classList.toggle('root', !!set && G.scale !== 'custom' && pc === G.root);
+    k.classList.toggle('editing', scaleEdit);
+  }
+  const sb = $('#scaleBar');
+  sb.querySelector('#scaleSel').value = G.scale;
+  sb.querySelector('#rootSel').value = G.root;
+  sb.querySelector('#rootSel').hidden = G.scale === 'chromatic' || G.scale === 'custom';
+  const eb = sb.querySelector('#scaleEdit'); eb.hidden = G.scale !== 'custom'; eb.classList.toggle('on', scaleEdit);
+  const names = set ? [...set].sort((x, y) => ((x - G.root + 12) % 12) - ((y - G.root + 12) % 12)).map(pc => NOTE_NAMES[pc]) : null;
+  sb.querySelector('#scaleInfo').textContent = !set ? 'all 12 notes' : set.size ? names.join(' ') : 'no notes selected';
+}
+function scaleChanged() { saveGlobal(); paintScale(); }
+(function buildScaleBar() {
+  const sb = $('#scaleBar');
+  const ss = sb.querySelector('#scaleSel'), rs = sb.querySelector('#rootSel');
+  SCALE_OPTS.forEach(([v, t]) => { mk('option', '', ss, t).value = v; });
+  NOTE_NAMES.forEach((t, i) => { mk('option', '', rs, t).value = i; });
+  ss.addEventListener('change', () => {
+    const prev = allowedSet();
+    if (ss.value === 'custom' && G.scale !== 'custom' && prev) G.mask = Array.from({ length: 12 }, (_, pc) => prev.has(pc));
+    G.scale = ss.value; if (G.scale !== 'custom') scaleEdit = false; scaleChanged(); ss.blur();
+  });
+  rs.addEventListener('change', () => { G.root = +rs.value; scaleChanged(); rs.blur(); });
+  sb.querySelector('#scaleEdit').addEventListener('click', e => { scaleEdit = !scaleEdit; paintScale(); e.currentTarget.blur(); });
+  if (!Array.isArray(G.mask) || G.mask.length !== 12) G.mask = Array(12).fill(true);
+  paintScale();
+})();
 $('#kbLeft').addEventListener('click', () => $('#kbOuter').scrollBy({ left: -7 * 40, behavior: 'smooth' }));
 $('#kbRight').addEventListener('click', () => $('#kbOuter').scrollBy({ left: 7 * 40, behavior: 'smooth' }));
 
-// computer keyboard
-const QW = { KeyA: 0, KeyW: 1, KeyS: 2, KeyE: 3, KeyD: 4, KeyF: 5, KeyT: 6, KeyG: 7, KeyY: 8, KeyH: 9, KeyU: 10, KeyJ: 11, KeyK: 12, KeyO: 13, KeyL: 14, KeyP: 15, Semicolon: 16, Quote: 17 };
-const qwBase = 48;
+// computer keyboard: two-octave tracker layout (as in modularaudio), by physical key position.
+// Low octave: Z row = white keys, A row = black. High octave: Q row = white, number row = black.
+// Left / right arrows are the <KB / KB> octave buttons.
+const QW = {
+  KeyZ: 0, KeyS: 1, KeyX: 2, KeyD: 3, KeyC: 4, KeyV: 5, KeyG: 6, KeyB: 7, KeyH: 8, KeyN: 9, KeyJ: 10, KeyM: 11,
+  Comma: 12, KeyL: 13, Period: 14, Semicolon: 15, Slash: 16,
+  KeyQ: 12, Digit2: 13, KeyW: 14, Digit3: 15, KeyE: 16, KeyR: 17, Digit5: 18, KeyT: 19, Digit6: 20, KeyY: 21, Digit7: 22, KeyU: 23,
+  KeyI: 24, Digit9: 25, KeyO: 26, Digit0: 27, KeyP: 28, BracketLeft: 29, Equal: 30, BracketRight: 31,
+};
 const qwDown = {};
 window.addEventListener('keydown', e => {
   if (e.target.closest && e.target.closest('input, select, textarea, dialog')) return;
   if (e.key === 'Shift') { fineKeys.shift = true; refreshLeds(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.code === 'KeyZ' || e.code === 'KeyX') { if (!e.repeat) { const id = e.code === 'KeyZ' ? 'kbDn' : 'kbUp'; pbDown(id); flashPB(id); } return; }
+  if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { e.preventDefault(); if (!e.repeat) { const id = e.code === 'ArrowLeft' ? 'kbDn' : 'kbUp'; pbDown(id); flashPB(id); } return; }
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pbDown('play'), pbUp('play'); return; }
   if (e.code in QW && !e.repeat) {
     e.preventDefault(); ensurePower();
-    let n = qwBase + QW[e.code];
-    if (n < KB_LO || n > KB_HI) n = clamp(n, KB_LO, KB_HI);
-    qwDown[e.code] = n; keyDown(n, 100, 'qw');
+    const n = QW_BASE + QW[e.code];
+    qwDown[e.code] = n; keyDown(n, 100);
   }
 });
 window.addEventListener('keyup', e => {
   if (e.key === 'Shift') { fineKeys.shift = false; refreshLeds(); }
-  if (e.code in qwDown) { keyUp(qwDown[e.code], 'qw'); delete qwDown[e.code]; }
+  if (e.code in qwDown) { keyUp(qwDown[e.code]); delete qwDown[e.code]; }
 });
 window.addEventListener('blur', () => { fineKeys.shift = false; for (const c in qwDown) { keyUp(qwDown[c]); delete qwDown[c]; } });
 
