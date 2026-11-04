@@ -595,8 +595,10 @@ function makeWheel(it, m) {
   render();
 }
 // ---------------------------------------------------------------- keyboard
-const KB_LO = 41, KB_HI = 72, QW_BASE = 48;   // computer-key Z = C3 on the panel keyboard
-const KEY_LABELS = ['Z', 'S', 'X', 'D', 'C', 'V', 'G', 'B', 'H', 'N', 'J', 'M', 'Q', '2', 'W', '3', 'E', 'R', '5', 'T', '6', 'Y', '7', 'U', 'I'];
+const KB_LO = 41, KB_HI = 72, QW_BASE = 41;   // computer-key Z = the panel keyboard's low F
+// labels shown on the on-screen keys (Z/A rows for the low octave, Q/number rows above)
+const KEY_LABELS = ['Z', 'S', 'X', 'D', 'C', 'F', 'V', 'B', 'H', 'N', 'J', 'M',
+  'Q', '2', 'W', '3', 'E', '4', 'R', 'T', '6', 'Y', '7', 'U', 'I', '9', 'O', '0', 'P', '-', '[', ']'];
 const kbEl = $('#keyboard'), keyEls = {};
 const isBlack = n => [1, 3, 6, 8, 10].includes(n % 12);
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -722,14 +724,15 @@ function scaleChanged() { saveGlobal(); paintScale(); }
 $('#kbLeft').addEventListener('click', () => $('#kbOuter').scrollBy({ left: -7 * 40, behavior: 'smooth' }));
 $('#kbRight').addEventListener('click', () => $('#kbOuter').scrollBy({ left: 7 * 40, behavior: 'smooth' }));
 
-// computer keyboard: two-octave tracker layout (as in modularaudio), by physical key position.
-// Low octave: Z row = white keys, A row = black. High octave: Q row = white, number row = black.
+// computer keyboard: tracker layout by physical key position, starting on the panel's low F.
+// Bottom letter row = white keys, row above = black keys (gaps at B–C and E–F, as on a piano);
+// the Q row and number row continue an octave up, covering all 32 keys F–C.
 // Left / right arrows are the <KB / KB> octave buttons.
 const QW = {
-  KeyZ: 0, KeyS: 1, KeyX: 2, KeyD: 3, KeyC: 4, KeyV: 5, KeyG: 6, KeyB: 7, KeyH: 8, KeyN: 9, KeyJ: 10, KeyM: 11,
+  KeyZ: 0, KeyS: 1, KeyX: 2, KeyD: 3, KeyC: 4, KeyF: 5, KeyV: 6, KeyB: 7, KeyH: 8, KeyN: 9, KeyJ: 10, KeyM: 11,
   Comma: 12, KeyL: 13, Period: 14, Semicolon: 15, Slash: 16,
-  KeyQ: 12, Digit2: 13, KeyW: 14, Digit3: 15, KeyE: 16, KeyR: 17, Digit5: 18, KeyT: 19, Digit6: 20, KeyY: 21, Digit7: 22, KeyU: 23,
-  KeyI: 24, Digit9: 25, KeyO: 26, Digit0: 27, KeyP: 28, BracketLeft: 29, Equal: 30, BracketRight: 31,
+  KeyQ: 12, Digit2: 13, KeyW: 14, Digit3: 15, KeyE: 16, Digit4: 17, KeyR: 18, KeyT: 19, Digit6: 20, KeyY: 21, Digit7: 22, KeyU: 23,
+  KeyI: 24, Digit9: 25, KeyO: 26, Digit0: 27, KeyP: 28, Minus: 29, BracketLeft: 30, BracketRight: 31,
 };
 const qwDown = {};
 window.addEventListener('keydown', e => {
