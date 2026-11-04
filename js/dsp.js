@@ -22,6 +22,15 @@ const INS = ['o1Pitch','pwmIn','o2Pitch','fmIn','mix1In','mix2In','noiseIn','vcf
   'trigIn','vcaAmtIn','vcaIn','revIn','rateIn','syncIn','hpfIn','attIn','clkIn','onoffIn','resetIn'];
 const MULTS = ['mult1','mult2','mult3','mult4'];
 const O = {}; OUTS.forEach((n, i) => O[n] = i);
+// Jack impedances for the passive patch model. These are typical values for
+// op-amp-buffered synth outputs and inputs, not figures from the instrument's
+// schematics (which are not public).
+const R_OUT = 1000;                 // every output: buffer behind a 1 kΩ resistor
+const I_MAX = 0.008;                // output buffer current limit (soft), amps
+const R_IN = {                      // input loads to ground; default 100 kΩ for CV/gate inputs
+  mix1In: 47e3, mix2In: 47e3, noiseIn: 47e3, vcfIn: 47e3, vcaIn: 47e3, revIn: 47e3, hpfIn: 47e3, fmIn: 47e3, attIn: 47e3,
+};
+const rIn = n => R_IN[n] || 100e3;
 const I = {}; INS.forEach((n, i) => I[n] = i);
 
 const PPQN = [1,2,3,4,5,6,7,8,9,10,11,12,24,48];
@@ -599,7 +608,7 @@ class Progenitor extends AudioWorkletProcessor {
     this.disc = PN.map(n => DISCRETE.has(n));
     this.outs = new Float64Array(OUTS.length);
     this.src = new Int16Array(INS.length).fill(-1);
-    this.netOuts = []; this.netV = new Float64Array(64); this.nNets = 0;
+    this.netOuts = []; this.netGin = []; this.netV = new Float64Array(64); this.nNets = 0;
     this.g = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bendUp: 2, bendDn: 2, extMode: 0, ppqnIn: 1, ppqnOut: 1,
       kbRange: 0, glideType: 0, gatedGlide: 1, transpose: 0, tapPersist: 0, velRange: 0, o2Range: 7, clkOutMode: 0,
       drift: 0.5, warm: 0, bleed: 0.3, os: 2, filt: 1 };
@@ -630,10 +639,12 @@ class Progenitor extends AudioWorkletProcessor {
     if (k === 'arpMode' && old !== v && this.inited) this.ctl.modeChanged(old, v);
     if (k === 'arpOct' && old !== v && this.inited) this.ctl.seqChanged();
   }
-  // Every cable joins two jacks into one electrical net (the four mults are
-  // permanently one net). A net's voltage is the average of the outputs on it,
-  // as if they were joined through their output resistors; an input on a net
-  // with no outputs reads 0 V (its normal is broken but nothing drives it).
+  // Every cable joins two jacks into one electrical net (the four mults are one
+  // passive, unbuffered net). Each net is solved as a small circuit: outputs are
+  // voltage sources behind R_OUT with a soft current limit, inputs are loads to
+  // ground. More inputs on a net pull its voltage down; outputs tied together
+  // split the difference, and hot outputs fighting each other run into the
+  // current limit. An input on a net with no outputs reads 0 V.
   resolvePatch(cables) {
     const ids = new Map(), par = [];
     const id = j => { if (!ids.has(j)) { ids.set(j, par.length); par.push(par.length); } return ids.get(j); };
@@ -645,15 +656,35 @@ class Progenitor extends AudioWorkletProcessor {
       const A = MULTS.includes(a) ? 'mult1' : a, B = MULTS.includes(b) ? 'mult1' : b;
       unite(id(A), id(B));
     }
-    const netOf = new Map(); this.netOuts = []; this.src.fill(-1);
-    const net = r => { if (!netOf.has(r)) { netOf.set(r, this.netOuts.length); this.netOuts.push([]); } return netOf.get(r); };
+    const netOf = new Map(); this.netOuts = []; this.netGin = []; this.src.fill(-1);
+    const net = r => { if (!netOf.has(r)) { netOf.set(r, this.netOuts.length); this.netOuts.push([]); this.netGin.push(0); } return netOf.get(r); };
     for (const [j, i] of ids) {
       const n = net(find(i));
       if (O[j] !== undefined) this.netOuts[n].push(O[j]);
-      else if (I[j] !== undefined) this.src[I[j]] = n;
+      else if (I[j] !== undefined) { this.src[I[j]] = n; this.netGin[n] += 1 / rIn(j); }
     }
     this.nNets = this.netOuts.length;
     if (this.netV.length < this.nNets) this.netV = new Float64Array(this.nNets * 2);
+  }
+  // Solve one net: sum of (current-limited) output currents = current into the input loads.
+  solveNet(q) {
+    const ms = this.netOuts[q], L = ms.length, gin = this.netGin[q], o = this.outs, G = 1 / R_OUT;
+    if (!L) return 0;
+    let num = 0; for (let k = 0; k < L; k++) num += o[ms[k]];
+    let V = num * G / (L * G + gin);                     // linear solution
+    let imax = 0; for (let k = 0; k < L; k++) imax = Math.max(imax, Math.abs(o[ms[k]] - V) * G);
+    if (imax < I_MAX * 0.25) return V;                   // far from the limit: linear is exact enough
+    for (let it = 0; it < 5; it++) {                     // Newton on KCL with current limiting
+      let f = -gin * V, df = -gin;
+      for (let k = 0; k < L; k++) {
+        // i = x / (1 + x^4)^(1/4), x = linear current / limit: linear until ~60% of the limit, then a firm knee
+        const x = (o[ms[k]] - V) * G / I_MAX, x4 = x * x * x * x, r = Math.sqrt(Math.sqrt(1 + x4));
+        f += I_MAX * x / r; df -= G / (r * r * r * r * r);
+      }
+      const dV = f / df; V -= dV;
+      if (Math.abs(dV) < 1e-6) break;
+    }
+    return V;
   }
   msg(d) {
     const c = this.ctl;
@@ -744,12 +775,8 @@ class Progenitor extends AudioWorkletProcessor {
       o[O.clkOut] = c.clkPulse > 0 ? 5 : 0;
 
       for (let s = 0; s < os; s++) {
-        // patch nets (passive: average of every output tied together)
-        for (let q = 0; q < this.nNets; q++) {
-          const ms = this.netOuts[q], L = ms.length;
-          if (L === 1) this.netV[q] = o[ms[0]];
-          else if (L) { let a = 0; for (let k = 0; k < L; k++) a += o[ms[k]]; this.netV[q] = a / L; } else this.netV[q] = 0;
-        }
+        // patch nets: passive circuit solve (loading, tied outputs, current limiting)
+        for (let q = 0; q < this.nNets; q++) this.netV[q] = this.solveNet(q);
         const noise = (Math.random() + Math.random() - 1) * 6;
 
         // modulation oscillator

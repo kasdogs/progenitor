@@ -492,8 +492,10 @@ function bindJack(el, id) {
       if (ev.pointerId !== pid) return;
       if (!started && Math.hypot(ev.clientX - x0, ev.clientY - y0) > 7) {
         started = true; pending = null;
+        // a plain drag always starts a new cable; Alt-drag (or press-and-hold on touch) moves the newest plug here
         const here = state.cables.filter(c => c.a === id || c.b === id);
-        if (kindOf(id) === 'i' && here.length) { const c = here[0]; dragC = { fixed: c.a === id ? c.b : c.a, moving: c, color: c.color }; state.cables = state.cables.filter(x => x !== c); }
+        const move = here.length && (e.altKey || (e.pointerType !== 'mouse' && ev.timeStamp - e.timeStamp > 450));
+        if (move) { const c = here[here.length - 1]; dragC = { fixed: c.a === id ? c.b : c.a, moving: c, color: c.color }; state.cables = state.cables.filter(x => x !== c); }
         else dragC = { fixed: id, color: COLORS[colorI % COLORS.length] };
         markTargets(dragC.fixed);
       }

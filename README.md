@@ -15,7 +15,7 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
 - **Spring reverb:** a dispersive allpass-chain model of two springs. Tap the SPRING REVERB title to knock the tank.
 - **Arp/Seq:** arpeggiator, and three 256-step sequences with tie, rest, accent and legato. Includes tap tempo, MIDI clock, external clock (or step advance), and clock, reset and on/off jacks.
 - **Global settings:** the documented settings, entered from the panel (hold HOLD + press SYNC, then use the keys) or from the Settings dialog.
-- **Patch points:** 41 in total, with universal patching. Any jack connects to any other and takes multiple cables. Connected jacks form one node: tied outputs average, and an input joined only to other inputs reads 0 V.
+- **Patch points:** 41 in total, with universal patching. Any jack connects to any other, and every jack takes any number of cables. Each group of connected jacks is solved as a passive circuit every sample: outputs are sources behind 1 kΩ with a current limit, and inputs are loads to ground (47 kΩ audio, 100 kΩ CV; typical values, not from schematics). Splitting a signal costs a little level per extra input, tied outputs meet in the middle, and an input joined only to other inputs reads 0 V.
 - **Keyboard:** 32 keys on screen. The computer keyboard uses the tracker layout from modularaudio, starting on the low F: Z/A rows for the first octave, Q/number rows above, covering all 32 keys. ← / → are <KB / KB>. Scale lock offers the seven modes with a root, or a custom note set, and snaps to the nearest note.
 - **MIDI:** Web MIDI in and out, covering notes, pitch bend, mod wheel, sustain, clock and the CC map.
 
