@@ -7,7 +7,7 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
 ## Voice
 
 - **Oscillators:** two polyBLEP oscillators (triangle, saw, square, narrow pulse) with hard sync, linear FM and PWM. Slow per-oscillator analog drift, plus an optional cold-start warm-up.
-- **Mixer:** DC coupled. Each channel is clean up to 80% on its knob, then overdrives through an asymmetric soft knee; the summing node has its own knee.
+- **Mixer:** DC coupled. Each channel is essentially clean up to 80% on its knob, then warms up gradually through a slightly asymmetric transistor-style curve (about 2.5% added distortion at full). The summing node has its own, higher-headroom stage.
 - **Filter:** 4-pole transistor ladder with tanh stages, self-oscillation and keyboard tracking (1:2 / OFF / 1:1). By default it is solved with zero-delay feedback (trapezoidal integrators, Newton-Raphson every sample). The faster Huovilainen model is selectable in Settings.
 - **Envelope:** RC-style ADSR. VCA modes are ENV, KB RLS and DRONE.
 - **Modulation:** LFO (sine, saw, ramp, square) from 0.07 Hz to 1.3 kHz, with sync and sample & hold.

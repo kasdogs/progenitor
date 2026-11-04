@@ -41,8 +41,15 @@ function knee(x, tp, tn, cp, cn) {
   if (x < -tn) return -tn - cn * th((-x - tn) / cn);
   return x;
 }
-// Mixer channel gain: unity-ish taper up to 80%, then the drive climbs fast.
-const mixGain = k => k + (k > 0.8 ? (k - 0.8) * 6 : 0);
+// Transistor-style soft saturation: x / (1 + |x/Vs|^6)^(1/6). Essentially linear
+// well below Vs, compressing gradually toward it; a lower negative-side Vs makes
+// it slightly lopsided, which is where the even-harmonic warmth comes from.
+function tsat(x, vp, vn) {
+  const v = x >= 0 ? vp : vn, r = x / v, r2 = r * r, r6 = r2 * r2 * r2;
+  return x / Math.cbrt(Math.sqrt(1 + r6));
+}
+// Mixer channel gain: plain taper to 80%, then a modest extra push into the stage.
+const mixGain = k => k + (k > 0.8 ? (k - 0.8) * 1.6 : 0);
 
 // ---------------------------------------------------------------- oscillator
 // PolyBLEP oscillator with one sample of latency so step corrections can be
@@ -777,10 +784,10 @@ class Progenitor extends AudioWorkletProcessor {
         o[O.o1Out] = y1; o[O.o2Out] = y2;
 
         // mixer (DC coupled, soft saturating)
-        // each channel stays clean to ~4 V (80% on the knob), then overdrives
-        const sum = knee(this.inp(I.mix1In, y1) * m1, 4.3, 4.0, 2.2, 1.8) + knee(this.inp(I.mix2In, y2) * m2, 4.3, 4.0, 2.2, 1.8)
-          + knee(this.inp(I.noiseIn, noise) * mN, 4.3, 4.0, 2.2, 1.8) + instV;
-        const mix = knee(sum, 7.5, 7.0, 2.5, 2.0);
+        // each channel is near-linear to ~4 V (80% on the knob), then warms up gradually
+        const sum = tsat(this.inp(I.mix1In, y1) * m1, 7.6, 6.9) + tsat(this.inp(I.mix2In, y2) * m2, 7.6, 6.9)
+          + tsat(this.inp(I.noiseIn, noise) * mN, 7.6, 6.9) + instV;
+        const mix = tsat(sum, 10.5, 9.6);
         o[O.mixOut] = mix;
 
         // ladder filter
