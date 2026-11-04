@@ -276,7 +276,7 @@ class Ctl {
     this.extLastF = -1; this.extQps = 2; this.extCount = 0; this.extLimit = Infinity;
     this.prevClk = 0; this.prevReset = 0; this.prevOnOff = null;
     this.clkOutCnt = 0; this.clkPulse = 0; this.midiOutCnt = 0;
-    this.f = 0; this.led = 0; this.transNote = 60;
+    this.f = 0; this.led = 0; this.transNote = 60; this.gateDeadF = 0;
   }
   mode() { return this.e.S[PI.arpMode]; }
   seqSel() { return this.e.S[PI.arpOct]; }
@@ -372,7 +372,7 @@ class Ctl {
     if (ext && this.e.g.extMode === 1) this.pendingAdv = true;
   }
   stopRun() {
-    this.running = false; this.editing = false; this.gateOffQ = -1; this.gateOffF = -1;
+    this.running = false; this.editing = false; this.gateOffQ = -1; this.gateOffF = -1; this.gateDeadF = 0;
     this.gateOff();
     if (!this.play && this.held.length) this.setNote(this.pick(), true, false);
   }
@@ -425,8 +425,10 @@ class Ctl {
       if (this.running && old === 1) this.editing = true;
       else { if (this.running) this.stopRun(); this.recFresh = true; this.pendTie = false; }
     } else if (old === 2) {
+      const wasEditing = this.editing;
       this.editing = false; this.postSeqs();
-      if (nu === 1 && this.running) return;
+      if (this.running && !this.hold && !this.held.length) { this.stopRun(); return; }
+      if (wasEditing && this.running) { if (nu === 0) this.idx = 0; return; }
     } else if (this.running) { this.idx = 0; }
     if (nu !== 2 && !this.running && this.play) {
       if ((nu === 0 && (this.held.length || this.latch.length)) || (nu === 1 && this.held.length)) this.startRun();
@@ -454,6 +456,7 @@ class Ctl {
     const tr = this.transNote - this.seqRoot(seq);
     s.n = n - tr; s.r = false;
     this.setNote(n, true, false); this.postSeqs();
+    this.gateOffQ = this.qpos + this.divNow() * 0.5; this.gateDeadF = this.f + this.fs * 0.5;
   }
   postSeqs() { this.e.evq.push({ t: 'seqs', d: this.seqs }); }
   divNow() {
@@ -500,7 +503,11 @@ class Ctl {
   armGateOff(stepQ, div, through) {
     if (through) { this.gateOffQ = -1; this.gateOffF = -1; return; }
     if (this.stepAdv) this.gateOffF = this.f + this.advLen * 0.5;
-    else this.gateOffQ = stepQ + div * 0.5;
+    else {
+      this.gateOffQ = stepQ + div * 0.5;
+      const q = this.qps > 0 ? this.qps : 2;
+      this.gateDeadF = this.f + Math.min(div / q * 0.5 * 1.5, 4) * this.fs;
+    }
   }
   midiClock(k) {
     const g = this.e.g; if (g.midiClkIn === 2) return;
@@ -569,7 +576,7 @@ class Ctl {
         this.lastStep = sc; this.led = 1;
         if (this.running) this.doStep(sc * div, div);
       }
-      if (this.gateOffQ >= 0 && this.qpos >= this.gateOffQ) { this.gateOffQ = -1; this.gateOff(); }
+      if (this.gateOffQ >= 0 && (this.qpos >= this.gateOffQ || this.f >= this.gateDeadF)) { this.gateOffQ = -1; this.gateOff(); }
       // clock outputs
       const clkRun = this.running || g.clkOutMode === 1;
       const c = Math.floor(this.qpos * PPQN[g.ppqnOut]);
@@ -579,6 +586,10 @@ class Ctl {
     }
     if (this.stepAdv && edge && (this.running || g.clkOutMode === 1)) this.clkPulse = Math.round(fs * 0.005);
     if (this.clkPulse > 0) this.clkPulse--;
+
+    // invariants: the run needs a held key, HOLD or live edit; a stopped voice needs a held key
+    if (this.running && !this.hold && !this.editing && !this.held.length) this.stopRun();
+    else if (!this.running && this.gate && !this.held.length) this.gateOff();
 
     // glide
     if (this.glideOn) {
