@@ -122,6 +122,47 @@ class Ladder {
   }
 }
 
+// Zero-delay-feedback ladder: trapezoidal (TPT) integrators with tanh stages,
+// the 4 coupled nonlinear equations solved every sample by Newton-Raphson.
+// The Jacobian is bidiagonal plus one feedback corner, so each step is O(4).
+class LadderZDF {
+  constructor(src) {
+    this.s = [0, 0, 0, 0]; this.y = [0, 0, 0, 0];
+    this.m = src.m; this.v = src.v; this.iv = src.iv;   // share the same component mismatch
+    this.F = new Float64Array(4); this.d = new Float64Array(4);
+  }
+  process(x, fc, res, fs) {
+    const G = Math.tan(Math.PI * Math.min(fc, fs * 0.45) / fs);
+    const k = 4 * res, s = this.s, y = this.y, m = this.m, v = this.v, iv = this.iv, F = this.F;
+    for (let it = 0; it < 6; it++) {
+      const u0 = x - k * y[3];
+      const tu = Math.tanh(u0 * v[0]);
+      const t0 = Math.tanh(y[0] * v[1]), t1 = Math.tanh(y[1] * v[2]), t2 = Math.tanh(y[2] * v[3]), t3 = Math.tanh(y[3] * v[3]);
+      const G0 = G * m[0], G1 = G * m[1], G2 = G * m[2], G3 = G * m[3];
+      F[0] = y[0] - s[0] - G0 * (tu * iv[0] - t0 * iv[1]);
+      F[1] = y[1] - s[1] - G1 * (t0 * iv[1] - t1 * iv[2]);
+      F[2] = y[2] - s[2] - G2 * (t1 * iv[2] - t2 * iv[3]);
+      F[3] = y[3] - s[3] - G3 * (t2 * iv[3] - t3 * iv[3]);
+      const d0 = 1 - t0 * t0, d1 = 1 - t1 * t1, d2 = 1 - t2 * t2, d3 = 1 - t3 * t3, du = 1 - tu * tu;
+      const a0 = 1 + G0 * d0, a1 = 1 + G1 * d1, a2 = 1 + G2 * d2, a3 = 1 + G3 * d3;
+      const c = G0 * k * du, b1 = G1 * d0, b2 = G2 * d1, b3 = G3 * d2;
+      // forward substitution with D3 left symbolic: Di = pi + qi*D3
+      const p0 = -F[0] / a0, q0 = -c / a0;
+      const p1 = (-F[1] + b1 * p0) / a1, q1 = b1 * q0 / a1;
+      const p2 = (-F[2] + b2 * p1) / a2, q2 = b2 * q1 / a2;
+      const p3 = (-F[3] + b3 * p2) / a3, q3 = b3 * q2 / a3;
+      const D3 = p3 / (1 - q3);
+      const D0 = p0 + q0 * D3, D1 = p1 + q1 * D3, D2 = p2 + q2 * D3;
+      y[0] += D0; y[1] += D1; y[2] += D2; y[3] += D3;
+      if (Math.abs(D0) + Math.abs(D1) + Math.abs(D2) + Math.abs(D3) < 1e-7 && it > 0) break;
+    }
+    if (!(Math.abs(y[3]) < 50)) { this.s = [0, 0, 0, 0]; this.y = [0, 0, 0, 0]; return 0; }
+    // update integrator states: s = 2y - s
+    for (let i = 0; i < 4; i++) s[i] = 2 * y[i] - s[i];
+    return y[3];
+  }
+}
+
 // ---------------------------------------------------------------- envelope
 class ADSR {
   constructor() { this.v = 0; this.st = 0; this.g = false; }
@@ -168,8 +209,8 @@ class Spring {
     this.ai = 0;
     this.base = len * fs; this.dlen = Math.ceil(this.base * 1.02) + 8;
     this.dl = new Float64Array(this.dlen); this.w = 0;
-    this.lp = 0; this.lpc = 1 - Math.exp(-TAU * 3600 / fs);
-    this.g = -Math.pow(10, -3 * len / 2.6);
+    this.lp = 0; this.lpc = 1 - Math.exp(-TAU * 4200 / fs);
+    this.g = -Math.pow(10, -3 * len / 5.8);
     this.ph = seed; this.phInc = TAU * (0.37 + seed * 0.1) / fs;
   }
   process(x) {
@@ -542,12 +583,12 @@ class Progenitor extends AudioWorkletProcessor {
     this.disc = PN.map(n => DISCRETE.has(n));
     this.outs = new Float64Array(OUTS.length);
     this.src = new Int16Array(INS.length).fill(-1);
-    this.multSrc = []; this.multV = 0;
+    this.netOuts = []; this.netV = new Float64Array(64); this.nNets = 0;
     this.g = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bendUp: 2, bendDn: 2, extMode: 0, ppqnIn: 1, ppqnOut: 1,
       kbRange: 0, glideType: 0, gatedGlide: 1, transpose: 0, tapPersist: 0, velRange: 0, o2Range: 7, clkOutMode: 0,
-      drift: 0.5, warm: 0, bleed: 0.3, os: 2 };
+      drift: 0.5, warm: 0, bleed: 0.3, os: 2, filt: 1 };
     this.o1 = new Osc(); this.o2 = new Osc(); this.lfo = new Osc();
-    this.lad = new Ladder(); this.env = new ADSR();
+    this.lad = new Ladder(); this.zdf = new LadderZDF(this.lad); this.env = new ADSR();
     this.kbr = 0; this.acc = 0; this.accSt = 0;
     this.hpX = 0; this.hpY = 0; this.fmX = 0; this.fmY = 0;
     this.sh = 0; this.prevSync = 0; this.bend = 0;
@@ -573,22 +614,30 @@ class Progenitor extends AudioWorkletProcessor {
     if (k === 'arpMode' && old !== v && this.inited) this.ctl.modeChanged(old, v);
     if (k === 'arpOct' && old !== v && this.inited) this.ctl.seqChanged();
   }
+  // Every cable joins two jacks into one electrical net (the four mults are
+  // permanently one net). A net's voltage is the average of the outputs on it,
+  // as if they were joined through their output resistors; an input on a net
+  // with no outputs reads 0 V (its normal is broken but nothing drives it).
   resolvePatch(cables) {
-    this.src.fill(-1); this.multSrc = [];
-    const kind = j => O[j] !== undefined ? 'o' : I[j] !== undefined ? 'i' : MULTS.includes(j) ? 'm' : null;
+    const ids = new Map(), par = [];
+    const id = j => { if (!ids.has(j)) { ids.set(j, par.length); par.push(par.length); } return ids.get(j); };
+    const find = a => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+    const unite = (a, b) => { a = find(a); b = find(b); if (a !== b) par[a] = b; };
+    const valid = j => O[j] !== undefined || I[j] !== undefined || MULTS.includes(j);
     for (const [a, b] of cables) {
-      const ka = kind(a), kb = kind(b);
-      let out = null, inp = null, toMult = false, fromMult = false;
-      if (ka === 'o' && kb === 'i') { out = a; inp = b; }
-      else if (ka === 'i' && kb === 'o') { out = b; inp = a; }
-      else if (ka === 'o' && kb === 'm') { out = a; toMult = true; }
-      else if (ka === 'm' && kb === 'o') { out = b; toMult = true; }
-      else if (ka === 'm' && kb === 'i') { inp = b; fromMult = true; }
-      else if (ka === 'i' && kb === 'm') { inp = a; fromMult = true; }
-      if (toMult) this.multSrc.push(O[out]);
-      else if (fromMult) this.src[I[inp]] = -2;
-      else if (out && inp) this.src[I[inp]] = O[out];
+      if (!valid(a) || !valid(b)) continue;
+      const A = MULTS.includes(a) ? 'mult1' : a, B = MULTS.includes(b) ? 'mult1' : b;
+      unite(id(A), id(B));
     }
+    const netOf = new Map(); this.netOuts = []; this.src.fill(-1);
+    const net = r => { if (!netOf.has(r)) { netOf.set(r, this.netOuts.length); this.netOuts.push([]); } return netOf.get(r); };
+    for (const [j, i] of ids) {
+      const n = net(find(i));
+      if (O[j] !== undefined) this.netOuts[n].push(O[j]);
+      else if (I[j] !== undefined) this.src[I[j]] = n;
+    }
+    this.nNets = this.netOuts.length;
+    if (this.netV.length < this.nNets) this.netV = new Float64Array(this.nNets * 2);
   }
   msg(d) {
     const c = this.ctl;
@@ -615,7 +664,7 @@ class Progenitor extends AudioWorkletProcessor {
       case 'kick': this.kick = 1; break;
     }
   }
-  inp(i, normal) { const s = this.src[i]; return s === -1 ? normal : s === -2 ? this.multV : this.outs[s]; }
+  inp(i, normal) { const s = this.src[i]; return s === -1 ? normal : this.netV[s]; }
   accTrig() { this.accSt = 1; }
 
   process(inputs, outputs) {
@@ -658,7 +707,9 @@ class Progenitor extends AudioWorkletProcessor {
       const m1 = S[PI.mix1] * 1.5, m2 = S[PI.mix2] * 1.5, mN = S[PI.mixN] * 1.5;
       const cutBase = 3.3219 + 10.966 * S[PI.cutoff];
       const kbt = [0.5, 0, 1][S[PI.kbTrack]];
-      const res = Math.pow(S[PI.res], 0.85) * 1.07;
+      const res = Math.pow(S[PI.res], 0.85) * 1.16;
+      // high resonance drags the self-oscillation pitch flat; trim it back so 1:1 tracking stays in tune
+      const resComp = Math.pow(2, (g.filt ? 0.05 : 0.03) * S[PI.res] * S[PI.res] * S[PI.res]);
       const envAmtK = (S[PI.envAmt] - 0.5) * 2;
       const vcaMode = S[PI.vcaMode];
       const hpG = Math.tan(Math.PI * Math.min(20 * Math.pow(500, S[PI.hpf]), fs * 0.24) / fs), hpK = hpG / (1 + hpG);
@@ -677,9 +728,12 @@ class Progenitor extends AudioWorkletProcessor {
       o[O.clkOut] = c.clkPulse > 0 ? 5 : 0;
 
       for (let s = 0; s < os; s++) {
-        // mult (passive: average of everything driving it)
-        const ms = this.multSrc;
-        if (ms.length) { let a = 0; for (let k = 0; k < ms.length; k++) a += o[ms[k]]; this.multV = a / ms.length; } else this.multV = 0;
+        // patch nets (passive: average of every output tied together)
+        for (let q = 0; q < this.nNets; q++) {
+          const ms = this.netOuts[q], L = ms.length;
+          if (L === 1) this.netV[q] = o[ms[0]];
+          else if (L) { let a = 0; for (let k = 0; k < L; k++) a += o[ms[k]]; this.netV[q] = a / L; } else this.netV[q] = 0;
+        }
         const noise = (Math.random() + Math.random() - 1) * 6;
 
         // modulation oscillator
@@ -722,8 +776,8 @@ class Progenitor extends AudioWorkletProcessor {
         const x = this.inp(I.vcfIn, mix);
         const ea = clamp(envAmtK + this.inp(I.envAmtIn, 0) / 8, -1.5, 1.5);
         const oct = cutBase + kbt * c.cv + ea * ev * 7 + this.inp(I.cutoffIn, 0) + ln * cAmt;
-        const fc = clamp(Math.pow(2, oct), 5, 22000);
-        const vcf = this.lad.process(x * 0.2, fc, res, fs) * 5;
+        const fc = clamp(Math.pow(2, oct) * resComp, 5, 22000);
+        const vcf = (g.filt ? this.zdf.process(x * 0.2 + (Math.random() - 0.5) * 2e-3, fc, res, fs) : this.lad.process(x * 0.2, fc, res, fs)) * 5;
         o[O.vcfOut] = vcf;
 
         // VCA
@@ -747,13 +801,13 @@ class Progenitor extends AudioWorkletProcessor {
       const dry = this.dec.out();
       let rx = dry - this.preHpX; this.preHpY = 0.985 * (this.preHpY + rx); this.preHpX = dry;
       this.preLp += (this.preHpY - this.preLp) * 0.45;
-      let drive = th(this.preLp * 0.12) * 4;
+      let drive = th(this.preLp * 0.2) * 5.5;
       if (this.kick) { drive += (Math.random() * 2 - 1) * 30 * this.kick; this.kick *= 0.97; if (this.kick < 0.01) this.kick = 0; }
-      const wet = (this.spr[0].process(drive) + this.spr[1].process(drive * 0.9)) * 0.9;
-      this.revLp += (wet - this.revLp) * 0.5;
+      const wet = (this.spr[0].process(drive) + this.spr[1].process(drive * 0.9)) * 1.6;
+      this.revLp += (wet - this.revLp) * 0.55;
       o[O.revOut] = this.revLp;
       const mx = S[PI.revMix];
-      const mixed = dry * Math.cos(mx * Math.PI / 2) + this.revLp * Math.sin(mx * Math.PI / 2) * 1.2;
+      const mixed = dry * Math.cos(mx * Math.PI / 2) + 6 * th(this.revLp * Math.sin(mx * Math.PI / 2) / 6);
       o[O.euroOut] = clamp(mixed, -5, 5);
       const vol = S[PI.volume];
       let y = mixed * vol * vol / 4;

@@ -14,7 +14,7 @@ const DEF = { arpRate: .45, arpMode: 0, arpDir: 0, arpOct: 0, lfoRate: .45, lfoW
   hpf: 0, att: .5, glide: 0, fine: .5, modWheel: 0, instGain: 0, triplet: 0, legato: 0 };
 const GDEF = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bend: 2, extMode: 0, ppqnIn: 1, ppqnOut: 1, kbRange: 0,
   local: 1, glideType: 0, gatedGlide: 1, transpose: 0, tapPersist: 0, velRange: 0, o2Range: 7, clkOutMode: 0, midiOutCh: -1,
-  drift: .5, warm: 0, bleed: .3, os: 2, extGain: .5, cables: 'show' };
+  drift: .5, warm: 0, bleed: .3, os: 2, filt: 1, extGain: .5, cables: 'show' };
 const PPQN = [1,2,3,4,5,6,7,8,9,10,11,12,24,48];
 const DIVN = ['4 whole notes','3 whole notes','2 whole notes','dotted whole','whole','dotted half','half','dotted quarter','quarter',
   'dotted 8th','8th','dotted 16th','16th','dotted 32nd','32nd','dotted 64th','64th'];
@@ -466,19 +466,12 @@ function drawCables() {
   svgC.setAttribute('class', G.cables === 'show' ? '' : G.cables);
   for (const id in jacks) jacks[id].el.classList.toggle('pending', pending === id);
 }
-function validPair(a, b) {
-  if (a === b) return false;
-  const ka = kindOf(a), kb = kindOf(b);
-  if (ka === 'm' && kb === 'm') return false;
-  if (ka === 'o' && kb === 'o') return false;
-  if (ka === 'i' && kb === 'i') return false;
-  return true;
-}
+// universal patching: any jack can join any other jack (see resolvePatch in dsp.js)
+function validPair(a, b) { return a !== b && !!jacks[a] && !!jacks[b]; }
 function connect(a, b, color) {
   if (!validPair(a, b)) return false;
-  let ka = kindOf(a);
-  if (ka === 'i' || (ka === 'm' && kindOf(b) === 'o')) [a, b] = [b, a];
-  if (kindOf(b) === 'i') state.cables = state.cables.filter(c => c.b !== b);
+  const rank = { o: 0, m: 1, i: 2 };
+  if (rank[kindOf(a)] > rank[kindOf(b)]) [a, b] = [b, a];
   if (state.cables.some(c => (c.a === a && c.b === b) || (c.a === b && c.b === a))) return false;
   if (!color) { color = COLORS[colorI % COLORS.length]; colorI++; store('colorI', colorI); }
   state.cables.push({ a, b, color });
@@ -560,6 +553,7 @@ function pbDown(id, ptype) {
   if (pressed.play && pressed.hold && pressed.tap) { clearTimeout(panicT); panicT = setTimeout(() => { if (pressed.play && pressed.hold && pressed.tap) { post({ t: 'panic' }); keysUp(); toast('All notes off'); } }, 1000); }
   if (id === 'hold' || id === 'play' || id === 'tap') refreshLeds();
 }
+function flashPB(id) { const b = leds[id]; if (!b) return; b.classList.add('on'); setTimeout(() => { pressed[id] = false; b.classList.remove('on'); }, 120); }
 function pbUp(id) {
   pressed[id] = false;
   if (id === 'hold' && !holdUsed) post({ t: 'hold' });
@@ -663,14 +657,13 @@ $('#kbRight').addEventListener('click', () => $('#kbOuter').scrollBy({ left: 7 *
 
 // computer keyboard
 const QW = { KeyA: 0, KeyW: 1, KeyS: 2, KeyE: 3, KeyD: 4, KeyF: 5, KeyT: 6, KeyG: 7, KeyY: 8, KeyH: 9, KeyU: 10, KeyJ: 11, KeyK: 12, KeyO: 13, KeyL: 14, KeyP: 15, Semicolon: 16, Quote: 17 };
-let qwBase = 48;
+const qwBase = 48;
 const qwDown = {};
 window.addEventListener('keydown', e => {
   if (e.target.closest && e.target.closest('input, select, textarea, dialog')) return;
   if (e.key === 'Shift') { fineKeys.shift = true; refreshLeds(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  if (e.code === 'KeyZ') { qwBase = Math.max(36, qwBase - 12); toast('Computer keys: C' + (qwBase / 12 - 1)); return; }
-  if (e.code === 'KeyX') { qwBase = Math.min(60, qwBase + 12); toast('Computer keys: C' + (qwBase / 12 - 1)); return; }
+  if (e.code === 'KeyZ' || e.code === 'KeyX') { if (!e.repeat) { const id = e.code === 'KeyZ' ? 'kbDn' : 'kbUp'; pbDown(id); flashPB(id); } return; }
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) pbDown('play'), pbUp('play'); return; }
   if (e.code in QW && !e.repeat) {
     e.preventDefault(); ensurePower();
@@ -745,7 +738,7 @@ function saveGlobal() { store('global', G); }
 function applyGlobal() {
   post({ t: 'g', v: { midiCh: G.midiCh, midiClkIn: G.midiClkIn, midiClkOut: G.midiClkOut, prio: G.prio, bendUp: G.bend, bendDn: G.bend,
     extMode: G.extMode, ppqnIn: G.ppqnIn, ppqnOut: G.ppqnOut, kbRange: G.kbRange, glideType: G.glideType, gatedGlide: G.gatedGlide,
-    transpose: G.transpose, tapPersist: G.tapPersist, velRange: G.velRange, o2Range: G.o2Range, clkOutMode: G.clkOutMode, drift: G.drift, warm: G.warm, bleed: G.bleed, os: G.os } });
+    transpose: G.transpose, tapPersist: G.tapPersist, velRange: G.velRange, o2Range: G.o2Range, clkOutMode: G.clkOutMode, drift: G.drift, warm: G.warm, bleed: G.bleed, os: G.os, filt: G.filt } });
   post({ t: 'p', k: 'instGain', v: extOn ? G.extGain : 0 });
   saveGlobal(); drawCables();
   $('#btnCables').textContent = 'Cables: ' + G.cables;
@@ -765,6 +758,7 @@ function buildSettings() {
   rng('Oscillator drift', 'drift', 0, 1, .01);
   opt('Cold-start warm-up drift', 'warm', [[0, 'off'], [1, 'on']]);
   rng('VCA control bleed (attack thump)', 'bleed', 0, 1, .01);
+  opt('Filter model', 'filt', [[1, 'zero-delay ladder, Newton solve'], [0, 'Huovilainen ladder (classic)']]);
   opt('Oversampling', 'os', [[2, '2x (lighter on CPU)'], [4, '4x (cleaner FM and sync)']]);
   rng('External input gain', 'extGain', 0, 1, .01);
   opt('Cables', 'cables', [['show', 'show'], ['dim', 'dim'], ['hide', 'hide']]);
