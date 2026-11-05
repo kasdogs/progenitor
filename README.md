@@ -19,7 +19,7 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
   - **Resonance:** follows the measured Mother-32 ladder taper, with a dead zone to 10% and self-oscillation from ~80%. Passband gain drops as resonance rises.
   - **Self-oscillation tuning:** a pitch trim keeps it mostly within about ±13 cents.
 - **Envelope:** RC-style ADSR. Stage times run from ~1.5 ms (attack) and ~2 ms (decay, release) up to ~12 s. VCA modes are ENV, KB RLS and DRONE.
-- **Modulation:** LFO (sine, saw, ramp, square) from 0.07 Hz to 1.3 kHz, with sync and sample & hold. The sine is shaped from the triangle (~1.5% distortion), as in the original 921-style circuit.
+- **Modulation:** the PITCH, CUTOFF and PULSE WIDTH AMT knobs have an audio-style taper and are scaled by the MOD wheel, as on the hardware. LFO (sine, saw, ramp, square) from 0.07 Hz to 1.3 kHz, with sync and sample & hold. The sine is shaped from the triangle (~1.5% distortion), as in the original 921-style circuit.
 - **Noise:** white, with a gentle top-end rolloff.
 - **Utilities:** a 1-pole high pass, a bipolar attenuator (normalled to +8 V) and a 4-jack passive mult.
 - **Spring reverb:** a parametric model of the 3-spring, long-decay Belton tank: stretched-allpass chirp cascades in damped, modulated loops, plus a high-frequency chirp path. Decay is ~2.7 s. Tap the SPRING REVERB title to knock the tank.
@@ -33,8 +33,8 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
   - **Behaviour:** two audio outputs in the mult mix half and half. A control output joined to anything wins. Fighting control outputs meet in the middle. An input joined only to other inputs reads 0 V.
 - **Layouts:** one row on wide screens, two rows on tablets, and a scrolling strip on phones (portrait and landscape), with the keyboard and controls docked at the bottom.
   - **Phone header:** one row (patch, menu, power) plus a module navigator that jumps along the strip and highlights what's in view. MIDI, Settings, Save, Help and cable visibility move into the ⋯ menu.
-  - **Strip layout:** the MIDI, ARP/SEQ CV and AUDIO modules switch to upright, full-height versions on the right of the main modules, after a thin divider (the navigator's I/O button jumps there). Desktop and tablet keep the horizontal rear-panel versions.
-  - **Under the keys (phones):** an arrow on the left hides or shows the pitch and mod wheels, giving the keyboard more room, and a scrollbar beside it scrolls the keys (drag it, or tap to jump). Phone keys are 37 px wide.
+  - **Strip layout:** after a thin divider at the end of the main modules, AUDIO sits above ARP/SEQ CV in one column, with MIDI to their right (the navigator's I/O button jumps there). Desktop and tablet keep the horizontal rear-panel row.
+  - **Under the keys (phones):** an arrow under the pitch and mod wheels hides them, giving the keyboard more room (it then sits at the left of the scrollbar row, to bring them back), and a scrollbar beside it scrolls the keys (drag it, or tap to jump). Phone keys are 37 px wide.
   - **KEYS:** hides or shows the keyboard for a bigger patching view.
   - **Module zoom:** pinch the module area to zoom just the modules, from "every module visible" (no spare space either side) up to large, focused between your fingers. The page itself never zooms, so the keyboard stays docked. ⋯ → Reset module zoom fits the modules to the screen height again.
   - **Disconnecting:** click or right-click a patched jack (mouse), or press and hold it (touch), to open a menu of its cables. Each row pulls exactly that cable, and hovering a row highlights it. The menu also has Disconnect all and Add another cable.

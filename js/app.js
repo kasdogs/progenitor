@@ -44,6 +44,7 @@ const FMT = {
   sustain: pct, volume: dial, revMix: pct, hpf: v => fHz(20 * Math.pow(500, v)), att: bip,
   glide: v => v < .004 ? 'off' : fT(.002 * Math.pow(2000, v)), fine: v => { const c = Math.round((v - .5) * 200); return (c > 0 ? '+' : '') + c + ' cents'; },
 };
+const MOD_AMT = new Set(['pitchAmt', 'cutoffAmt', 'pwAmt']);
 const NAMES = { arpRate: 'Arp/Seq rate', lfoRate: 'Mod rate', pitchAmt: 'Pitch amount', cutoffAmt: 'Cutoff amount', pwAmt: 'Pulse width amount',
   o2Freq: 'Osc 2 frequency', mix1: 'Oscillator 1', mix2: 'Oscillator 2', mixN: 'Noise', cutoff: 'Cutoff', res: 'Resonance', envAmt: 'Envelope amount',
   attack: 'Attack', decay: 'Decay', release: 'Release', sustain: 'Sustain', volume: 'Volume', revMix: 'Reverb mix', hpf: 'High pass',
@@ -109,17 +110,19 @@ const REAR = [
     J('revOut', 40, 56, 'REVERB<br>OUT', 1), J('euroOut', 124, 56, 'EURORACK<br>OUT', 1), { t: 'ext', x: 208, y: 56, label: 'EXT. INPUT' },
     { t: 'led', id: 'outLed', x: 292, y: 50 }, TX(292, 84, 'MAIN OUT', 'lbl out') ] },
 ];
-// phones: the same three modules stood upright, full height, side by side after a thin divider
+// phones: AUDIO above ARP/SEQ CV in one column, MIDI to their right (vertically centred),
+// all after a thin divider
 const REAR_V = [
-  { id: 'midi', title: 'MIDI', w: 130, h: 628, items: [
-    K('fine', 65, 150, 'FINE TUNE'), { t: 'led', id: 'midiLed', x: 65, y: 290 }, TX(65, 314, 'MIDI IN', 'lbl sm'),
-    { t: 'midiText', x: 65, y: 380 } ] },
-  { id: 'cv', title: 'ARP/SEQ CV', w: 150, h: 628, items: [
-    J('clkOut', 75, 115, 'CLOCK OUT', 1), J('resetIn', 75, 250, 'RESET IN'), J('onoffIn', 75, 385, 'ON/OFF IN'), J('clkIn', 75, 520, 'CLOCK IN') ] },
-  { id: 'audio', title: 'AUDIO', w: 150, h: 628, items: [
-    J('revOut', 75, 115, 'REVERB OUT', 1), J('euroOut', 75, 250, 'EURORACK OUT', 1), { t: 'ext', x: 75, y: 385, label: 'EXT. INPUT' },
-    { t: 'led', id: 'outLed', x: 75, y: 510 }, TX(75, 540, 'MAIN OUT', 'lbl out') ] },
+  { id: 'audio', title: 'AUDIO', w: 186, h: 306, items: [
+    J('revOut', 47, 113, 'REVERB<br>OUT', 1), J('euroOut', 139, 113, 'EURORACK<br>OUT', 1),
+    { t: 'ext', x: 47, y: 232, label: 'EXT.<br>INPUT' }, { t: 'led', id: 'outLed', x: 139, y: 228 }, TX(139, 262, 'MAIN<br>OUT', 'lbl out') ] },
+  { id: 'cv', title: 'ARP/SEQ CV', w: 186, h: 306, tight: 1, items: [
+    J('clkOut', 47, 110, 'CLOCK<br>OUT', 1), J('resetIn', 139, 110, 'RESET<br>IN'), J('onoffIn', 47, 226, 'ON/OFF<br>IN'), J('clkIn', 139, 226, 'CLOCK<br>IN') ] },
+  { id: 'midi', title: 'MIDI', w: 150, h: 291, items: [
+    K('fine', 75, 113, 'FINE TUNE'), { t: 'led', id: 'midiLed', x: 75, y: 211 }, TX(75, 233, 'MIDI IN', 'lbl sm'),
+    { t: 'midiText', x: 75, y: 268 } ] },
 ];
+
 const LHC = { id: 'lhc', title: '', w: 268, h: 312, items: [
   K('glide', 54, 66, 'GLIDE'), { t: 'led', id: 'legLed', x: 54, y: 140 }, TX(54, 158, 'LEGATO', 'lbl sm'),
   { t: 'pb', id: 'play', x: 138, y: 38, label: 'PLAY', sub: '(TIE)' }, { t: 'pb', id: 'hold', x: 188, y: 38, label: 'HOLD', sub: '(REST)' },
@@ -167,7 +170,7 @@ const ICON = {
   tri: 'M-9 6 L0 -7 L9 6', saw: 'M-9 6 L4 -7 L4 6', ramp: 'M-9 6 L4 -7 L4 6', sawd: 'M-8 -7 L-8 6 L8 6 M-8 -7 L8 6',
   sine: 'M-10 0 C-6 -10 -3 -10 0 0 C3 10 6 10 10 0', sq: 'M-9 6 L-9 -6 L0 -6 L0 6 L9 6 L9 -6', pulse: 'M-9 6 L-9 -6 L-4 -6 L-4 6 L9 6 L9 -6',
 };
-ICON.sawd = 'M-8 -6 L6 6 L6 -6'; ICON.ramp = 'M-8 6 L6 -6 L6 6';
+ICON.sawd = 'M-7 6 L-7 -6 L7 6'; ICON.ramp = 'M-7 6 L7 -6 L7 6';   // panel art: SAW |\  RAMP /|
 let uidN = 0;
 
 // ---------------------------------------------------------------- param set
@@ -181,9 +184,13 @@ function setP(id, v, opt = {}) {
 function autosave() { store('current', { pv: PATCH_VER, p: state.p, cables: state.cables.map(c => [c.a, c.b, c.color]), name: state.name }); }
 // Patch units changed in version 2 (cutoff knob to ~11 kHz, measured resonance taper,
 // 1.5/2 ms–12 s envelope times). Older patches are converted so they sound the same.
-const PATCH_VER = 2;
-function migrateP(p) {
+// Version 3: the modulation amount knobs got an audio-style taper (depth = knob²), so older
+// values become their square root and keep the same depth.
+const PATCH_VER = 3;
+function migrateP(p, ver = 1) {
   const q = Object.assign({}, p);
+  if (ver < 3) for (const k of ['pitchAmt', 'cutoffAmt', 'pwAmt']) if (typeof q[k] === 'number') q[k] = Math.sqrt(clamp(q[k], 0, 1));
+  if (ver >= 2) return q;
   if (typeof q.cutoff === 'number') q.cutoff = clamp(q.cutoff * Math.log(2000) / Math.log(1100), 0, 1);
   if (typeof q.res === 'number') q.res = q.res > 0 ? clamp(0.1 + 0.812 * Math.pow(q.res, 0.85), 0, 1) : 0;
   const tm = (v, t0, r) => clamp(Math.log(0.001 * Math.pow(10000, v) / t0) / Math.log(r), 0, 1);
@@ -203,6 +210,7 @@ function showTip(id, el) {
   let txt = f ? f(v) : '';
   if (!f && ctrls[id] && ctrls[id].spec.opts) txt = ctrls[id].spec.opts[v];
   if (!f && ctrls[id] && ctrls[id].spec.icons) txt = { tri: 'triangle', saw: 'saw', sq: 'square', pulse: 'narrow pulse', sine: 'sine', sawd: 'saw', ramp: 'ramp' }[ctrls[id].spec.icons[v]];
+  if (MOD_AMT.has(id) && state.p.modWheel < 0.02) txt += ' · raise the MOD wheel';
   tip.innerHTML = `<span>${NAMES[id] || id}${fine() ? ' · fine' : ''}</span>${txt}`;
   const r = el.getBoundingClientRect();
   tip.style.left = (r.left + r.width / 2) + 'px'; tip.style.top = (r.top - 4) + 'px'; tip.hidden = false;
@@ -398,7 +406,7 @@ function buildModule(spec, parent) {
       case 'ext': {
         const b = mk('button', 'extbtn', m, '<svg viewBox="0 0 24 24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-2.1A7 7 0 0 0 19 12Z"/></svg>');
         place(b, it.x, it.y); b.title = 'External input (microphone / line in)'; b.setAttribute('aria-label', 'External input');
-        label(m, it.x, it.y + 28, it.label, 'lbl sm'); b.addEventListener('click', toggleExt); leds.ext = b; break;
+        label(m, it.x, it.y + (it.label.includes('<br>') ? 33 : 28), it.label, 'lbl sm'); b.addEventListener('click', toggleExt); leds.ext = b; break;
       }
       case 'pb': {
         const b = mk('button', 'pbtn', m); place(b, it.x, it.y); b.setAttribute('aria-label', it.label);
@@ -425,8 +433,11 @@ function buildRear(vertical) {
   for (const s of REAR) for (const it of s.items) if (it.t === 'jack') { if (!first && pending === it.id) setPending(null); delete jacks[it.id]; }
   delete ctrls.fine;
   rearRow.innerHTML = '';
-  if (vertical) mk('div', 'rear-sep', rearRow).setAttribute('aria-hidden', 'true');
-  specs.forEach(s => buildModule(s, rearRow));
+  if (vertical) {
+    mk('div', 'rear-sep', rearRow).setAttribute('aria-hidden', 'true');
+    const col = mk('div', 'rear-col', rearRow);
+    buildModule(REAR_V[0], col); buildModule(REAR_V[1], col); buildModule(REAR_V[2], rearRow);
+  } else specs.forEach(s => buildModule(s, rearRow));
   leds.midiText.textContent = midiLabel;
   if (typeof extOn !== 'undefined' && extOn) leds.ext.classList.add('on');
 }
@@ -441,6 +452,7 @@ let deckMode = 0;
 function buildDeck(compact) {
   if (deckMode === (compact ? 2 : 1)) return;
   deckMode = compact ? 2 : 1;
+  $('#kbFoot').prepend($('#whToggle'));   // keep the hider out of the way of the rebuild
   $('#lhcWrap').innerHTML = ''; $('#whWrap').innerHTML = '';
   if (compact) { buildModule(LHCM, $('#lhcWrap')); buildModule(WHL, $('#whWrap')); }
   else buildModule(LHC, $('#lhcWrap'));
@@ -454,6 +466,9 @@ const KEY_W = 37;   // white-key width on phones (px)
 let wheelsHidden = load('wheelsHidden', false);
 function paintWheelToggle() {
   const b = $('#whToggle'); b.textContent = wheelsHidden ? '›' : '‹';
+  // shown wheels: the hider is anchored under them; hidden: it snaps into the scrollbar row
+  if (!wheelsHidden && document.body.classList.contains('L3')) { if (b.parentElement !== $('#whWrap')) $('#whWrap').appendChild(b); }
+  else if (b.parentElement !== $('#kbFoot')) $('#kbFoot').prepend(b);
   b.setAttribute('aria-expanded', String(!wheelsHidden)); b.setAttribute('aria-label', (wheelsHidden ? 'Show' : 'Hide') + ' pitch and mod wheels');
 }
 $('#whToggle').addEventListener('click', () => { wheelsHidden = !wheelsHidden; store('wheelsHidden', wheelsHidden); paintWheelToggle(); layout(); });
@@ -505,7 +520,7 @@ const zoom = {
     this.u = u; document.documentElement.style.setProperty('--u', u.toFixed(4));
     // at the "everything visible" end, trim any leftover overflow (a few parts don't scale linearly)
     if (u <= lo * 1.0001) for (let i = 0; i < 3; i++) {
-      const over = sc.scrollWidth - sc.clientWidth; if (over <= 0) break;
+      const over = panel.offsetWidth + 20 - sc.clientWidth; if (over <= 0) break;   // the panel itself, not the (possibly stale) cable layer
       const cw = sc.clientWidth - 20; this.u = u = u * cw / (cw + over + 0.5); document.documentElement.style.setProperty('--u', u.toFixed(4));
     }
     if (focus) { sc.scrollLeft = panel.offsetLeft + fx * u - focus.x; sc.scrollTop = panel.offsetTop + fy * u - focus.y; }
@@ -599,6 +614,8 @@ function layout() {
   document.body.classList.toggle('noWheels', mode === 3 && wheelsHidden);
   buildDeck(mode === 3);
   buildRear(mode === 3);
+  document.body.classList.toggle('noWheels', mode === 3 && wheelsHidden);
+  paintWheelToggle();
   layoutMode = mode;
   const deckH = $('#deck').offsetHeight, barH = $('.bar').offsetHeight;
   document.documentElement.style.setProperty('--deckH', deckH + 'px');
@@ -1371,7 +1388,7 @@ const PRESETS = [
   { name: 'Velocity Pluck', p: { o1Wave: 3, o2Wave: 1, o2Freq: .505, mix1: .5, mix2: .45, cutoff: .38, res: .35, envAmt: .74, decay: .4, sustain: .1, release: .4, revMix: .25 }, c: [['velOut', 'cutoffIn']] },
   { name: 'Tremolo Organ', p: { o1Wave: 2, o1Oct: 2, o2Wave: 0, o2Oct: 2, mix1: .5, mix2: .5, cutoff: .78, envAmt: .5, attack: .1, sustain: 1, release: .3, lfoRate: .42, vcaMode: 1, revMix: .3 }, c: [['lfoOut', 'vcaAmtIn']] },
 ];
-let userPatches = load('patches', []).map(u => (u.pv >= PATCH_VER ? u : Object.assign({}, u, { p: migrateP(u.p || {}), pv: PATCH_VER })));
+let userPatches = load('patches', []).map(u => (u.pv >= PATCH_VER ? u : Object.assign({}, u, { p: migrateP(u.p || {}, u.pv || 1), pv: PATCH_VER })));
 store('patches', userPatches);
 let dirty = false;
 function markDirty() { if (!dirty) { dirty = true; refreshPatchSel(); } }
@@ -1432,7 +1449,7 @@ more.addEventListener('click', async e => {
   if (a === 'zoom') zoom.reset();
   if (a === 'cables') { G.cables = { show: 'dim', dim: 'hide', hide: 'show' }[G.cables]; applyGlobal(); }
   if (a === 'export') {
-    const blob = new Blob([JSON.stringify({ format: 'progenitor-patch', version: 2, ...snapshot(state.name), seqs }, null, 1)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ format: 'progenitor-patch', version: 3, ...snapshot(state.name), seqs }, null, 1)], { type: 'application/json' });
     const url = URL.createObjectURL(blob), l = document.createElement('a');
     l.href = url; l.download = state.name.replace(/[^\w-]+/g, '_') + '.json'; l.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -1452,7 +1469,7 @@ $('#fileIn').addEventListener('change', async e => {
     const j = JSON.parse(await f.text());
     if (!j.p || !Array.isArray(j.cables)) throw new Error('not a patch');
     let p = {}; for (const k in DEF) if (typeof j.p[k] === 'number') p[k] = j.p[k];
-    if (!(j.pv >= PATCH_VER)) p = migrateP(p);
+    if (!(j.pv >= PATCH_VER)) p = migrateP(p, j.pv || 1);
     applyPatch(p, j.cables.filter(c => Array.isArray(c) && typeof c[0] === 'string' && typeof c[1] === 'string'), String(j.name || 'Imported').slice(0, 40));
     if (Array.isArray(j.seqs) && j.seqs.length === 3 && confirm('This file also contains sequences. Load them too (replaces your current ones)?')) { seqs = j.seqs; post({ t: 'seqs', v: seqs }); store('seqs', seqs); }
     dirty = true; refreshPatchSel();
@@ -1467,7 +1484,7 @@ function toast(msg) { const t = $('#toast'); t.textContent = msg; t.hidden = fal
 // ---------------------------------------------------------------- boot
 const cur = load('current', null);
 if (cur && cur.p) {
-  Object.assign(state.p, DEF, cur.pv >= PATCH_VER ? cur.p : migrateP(cur.p)); state.name = cur.name || 'Init';
+  Object.assign(state.p, DEF, cur.pv >= PATCH_VER ? cur.p : migrateP(cur.p, cur.pv || 1)); state.name = cur.name || 'Init';
   (cur.cables || []).forEach(([a, b, col]) => { if (jacks[a] && jacks[b]) state.cables.push({ a, b, color: col || COLORS[0] }); });
   for (const id in ctrls) ctrls[id].render();
 }

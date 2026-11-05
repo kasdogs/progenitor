@@ -68,7 +68,7 @@ button, select, input { font: inherit; }
   top: calc(var(--u) * 24px); left: 50%; white-space: nowrap;
   font-weight: 700; letter-spacing: .12em; font-size: max(11px, calc(var(--u) * 18px));
 }
-.module .title.tight { letter-spacing: .04em; font-size: max(10px, calc(var(--u) * 16px));
+.module .title.tight { letter-spacing: .04em; font-size: max(calc(var(--u) * 15px), min(7px, calc(var(--u) * 22px)));
 }
 .module .title::after {
   content: ""; position: absolute; left: 50%; bottom: calc(var(--u) * -5px); transform: translateX(-50%);
@@ -153,7 +153,7 @@ button, select, input { font: inherit; }
 .slider .capS::after { content: ""; position: absolute; left: 10%; right: 10%; top: 50%; height: 2px; background: #efe7d4; }
 
 /* rear */
-.mtext { font-size: max(9px, calc(var(--u) * 12px)); font-weight: 600; color: var(--ink-soft); white-space: nowrap; cursor: pointer; text-decoration: underline dotted; }
+.mtext { font-size: max(calc(var(--u) * 12px), min(9px, calc(var(--u) * 18px))); font-weight: 600; color: var(--ink-soft); white-space: nowrap; cursor: pointer; text-decoration: underline dotted; }
 .extbtn { width: calc(var(--u) * 40px); height: calc(var(--u) * 40px); border-radius: 50%; border: calc(var(--u) * 2.4px) solid var(--ink); background: #2a2521; cursor: pointer; display: grid; place-items: center; padding: 0; }
 .extbtn svg { width: 60%; height: 60%; fill: #9d968a; }
 .extbtn.on { background: var(--led); }
@@ -174,7 +174,7 @@ button, select, input { font: inherit; }
 }
 body.dock #deck {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; max-width: none; gap: 6px;
-  padding: 6px 6px calc(6px + env(safe-area-inset-bottom)); background: #0f0e0d; border-top: 1px solid #2c2723;
+  padding: 6px; background: #0f0e0d; border-top: 1px solid #2c2723;
 }
 #lhcWrap { --u: var(--du); flex: none; }
 #lhcWrap .module { background: linear-gradient(180deg, #2e2925, #221e1b); color: var(--card); box-shadow: inset 0 0 0 1px #3d3631, 0 6px 14px #0006; }
@@ -294,11 +294,12 @@ dialog menu button { background: #2c2723; color: #e9e1d0; border: 1px solid #4a4
 /* phone deck: control strip above wheels + keyboard */
 #whWrap { --u: var(--du); flex: none; display: none; }
 #whWrap .module, #lhcWrap .module.m-lhcm { background: linear-gradient(180deg, #2e2925, #221e1b); color: var(--card); box-shadow: inset 0 0 0 1px #3d3631; }
-body.L3 #deck { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "lhc lhc" "wh kb" "foot foot"; row-gap: 6px; }
+body.L3 #deck { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "lhc lhc" "wh kb" "wh foot"; row-gap: 6px; column-gap: 6px; }
 body.L3.noWheels #deck { grid-template-areas: "lhc lhc" "kb kb" "foot foot"; }
 body.L3.noWheels #whWrap { display: none; }
 body.L3 #lhcWrap { grid-area: lhc; justify-self: center; }
-body.L3 #whWrap { grid-area: wh; display: block; }
+body.L3 #whWrap { grid-area: wh; display: flex; flex-direction: column; align-items: center; gap: 6px; align-self: stretch; }
+body.L3 #whWrap #whToggle { width: 100%; }
 body.L3 #kbCol { grid-area: kb; }
 body.L3 #scaleBar { font-size: 13px; gap: 4px; }
 body.L3 #scaleBar .sbl, body.L3 #scaleInfo { display: none; }
@@ -367,7 +368,7 @@ body.L3 #modNav button {
   background: #1a1715 !important; color: #a99d8d !important; border: 1px solid #2f2a26 !important; border-radius: 999px !important;
 }
 body.L3 #modNav button.on { color: #2a1404 !important; background: var(--led) !important; border-color: var(--led) !important; }
-body.L3.land #modNav { order: 0; flex: 1 1 auto; }
+body.L3.land #modNav { order: 0; flex: 1 1 0; min-width: 0; }
 body.L3.land .brand { display: none; }
 
 /* bigger touch targets for jacks, without changing how they look */
@@ -392,7 +393,7 @@ body.L3 #deckToggle { display: block; order: 99; margin-left: 6px; border-style:
 body.L3.kbHide #deck { display: none; }
 
 /* landscape phone: controls, wheels and keys side by side in one row */
-body.L3.land #deck { grid-template-columns: auto auto 1fr; grid-template-rows: auto 1fr auto; grid-template-areas: "lhc wh kbd" "sb wh kbd" "foot foot foot"; align-items: start; }
+body.L3.land #deck { grid-template-columns: auto auto 1fr; grid-template-rows: auto 1fr auto; grid-template-areas: "lhc wh kbd" "sb wh kbd" ". wh foot"; align-items: start; }
 body.L3.land.noWheels #deck { grid-template-columns: auto 1fr; grid-template-areas: "lhc kbd" "sb kbd" "foot foot"; }
 body.L3.land #kbCol { display: contents; }
 body.L3.land #scaleBar { grid-area: sb; }
@@ -402,13 +403,14 @@ body.L3.land #kbRight2, body.L3.land #kbLeft2 { margin: 0; }
 
 /* phones: rear-panel modules (MIDI, CV, audio) stack in a column at the end of the strip */
 body.L3 #panel { flex-direction: row; align-items: flex-start; gap: calc(var(--u) * 14px); }
-body.L3 .rear-row { order: 2; flex-direction: row; justify-content: flex-start; align-items: stretch; gap: calc(var(--u) * 14px); }
+body.L3 .rear-row { order: 2; flex-direction: row; justify-content: flex-start; align-items: center; gap: calc(var(--u) * 14px); align-self: stretch; }
+.rear-col { display: flex; flex-direction: column; gap: calc(var(--u) * 14px); }
 .rear-sep { display: none; }
 body.L3 .rear-sep {
   display: block; flex: none; align-self: stretch; width: max(1px, calc(var(--u) * 2px));
   margin: calc(var(--u) * 24px) calc(var(--u) * 4px); background: #4a423b; border-radius: 1px;
 }
-body.L3 .m-rear .mtext { white-space: normal; text-align: center; width: calc(var(--u) * 110px); }
+body.L3 .m-rear .mtext { white-space: normal; text-align: center; width: calc(var(--u) * 130px); }
 body.L3.land .patchbox { flex: 0 1 200px; min-width: 120px; }
 
 /* disconnect menu */

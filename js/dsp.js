@@ -887,7 +887,10 @@ class Progenitor extends AudioWorkletProcessor {
       const lfoK = 14.214 * S[PI.lfoRate];
       const lfoW = [7, 5, 1, 2][S[PI.lfoWave]];
       const mw = S[PI.modWheel];
-      const pAmt = S[PI.pitchAmt] * mw * 1.5, cAmt = S[PI.cutoffAmt] * mw * 4, wAmt = S[PI.pwAmt] * mw * 0.45;
+      // amount knobs have an audio-style (squared) taper, so the first half of the turn covers the
+      // subtle depths (vibrato, gentle sweeps); the MOD wheel scales them all from off to full
+      const pA = S[PI.pitchAmt], cA = S[PI.cutoffAmt], wA = S[PI.pwAmt];
+      const pAmt = pA * pA * mw * 1.5, cAmt = cA * cA * mw * 4, wAmt = wA * wA * mw * 0.45;
       const bendV = (this.bend >= 0 ? this.bend * g.bendUp : this.bend * g.bendDn) / 12;
       const fineV = (S[PI.fine] - 0.5) * 2 / 12;
       const cv = c.cvS;
