@@ -294,7 +294,9 @@ dialog menu button { background: #2c2723; color: #e9e1d0; border: 1px solid #4a4
 /* phone deck: control strip above wheels + keyboard */
 #whWrap { --u: var(--du); flex: none; display: none; }
 #whWrap .module, #lhcWrap .module.m-lhcm { background: linear-gradient(180deg, #2e2925, #221e1b); color: var(--card); box-shadow: inset 0 0 0 1px #3d3631; }
-body.L3 #deck { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "lhc lhc" "wh kb"; }
+body.L3 #deck { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "lhc lhc" "wh kb" "foot foot"; row-gap: 6px; }
+body.L3.noWheels #deck { grid-template-areas: "lhc lhc" "kb kb" "foot foot"; }
+body.L3.noWheels #whWrap { display: none; }
 body.L3 #lhcWrap { grid-area: lhc; justify-self: center; }
 body.L3 #whWrap { grid-area: wh; display: block; }
 body.L3 #kbCol { grid-area: kb; }
@@ -390,7 +392,8 @@ body.L3 #deckToggle { display: block; order: 99; margin-left: 6px; border-style:
 body.L3.kbHide #deck { display: none; }
 
 /* landscape phone: controls, wheels and keys side by side in one row */
-body.L3.land #deck { grid-template-columns: auto auto 1fr; grid-template-rows: auto 1fr; grid-template-areas: "lhc wh kbd" "sb wh kbd"; align-items: start; }
+body.L3.land #deck { grid-template-columns: auto auto 1fr; grid-template-rows: auto 1fr auto; grid-template-areas: "lhc wh kbd" "sb wh kbd" "foot foot foot"; align-items: start; }
+body.L3.land.noWheels #deck { grid-template-columns: auto 1fr; grid-template-areas: "lhc kbd" "sb kbd" "foot foot"; }
 body.L3.land #kbCol { display: contents; }
 body.L3.land #scaleBar { grid-area: sb; }
 body.L3.land #kbScroll { grid-area: kbd; }
@@ -430,3 +433,16 @@ body.L3 .lbl { font-size: max(calc(var(--u) * 13px), min(8px, calc(var(--u) * 20
 body.L3 .lbl.sm { font-size: max(calc(var(--u) * 10.5px), min(7px, calc(var(--u) * 16px))); }
 body.L3 #wrap { display: flex; }
 body.L3 #panel { margin: auto 0; flex: none; }
+
+/* phones: under the keys, the wheel toggle and a keyboard scrollbar */
+#kbFoot { display: none; }
+body.L3 #kbFoot { display: flex; grid-area: foot; align-items: center; gap: 8px; min-width: 0; }
+#whToggle {
+  flex: none; width: 34px; height: 24px; padding: 0; line-height: 1; font-size: 18px; font-weight: 700; cursor: pointer;
+  background: #1d1a17; color: #c9bfae; border: 1px solid #3a342e; border-radius: 6px;
+}
+#kbBar { position: relative; flex: 1 1 auto; height: 24px; cursor: pointer; touch-action: none; outline: none; }
+#kbBar::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 8px; transform: translateY(-50%); background: #1d1a17; border: 1px solid #2f2a26; border-radius: 4px; }
+#kbThumb { position: absolute; top: 50%; height: 14px; transform: translateY(-50%); min-width: 24px; background: #6b5f52; border-radius: 7px; box-shadow: 0 1px 3px #0008; }
+#kbThumb.drag, #kbBar:focus-visible #kbThumb { background: var(--led); }
+#kbBar.full #kbThumb { opacity: .35; }

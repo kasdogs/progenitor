@@ -449,6 +449,46 @@ function buildDeck(compact) {
 
 // ---------------------------------------------------------------- layout scaling
 let layoutMode = 0;
+const KEY_W = 37;   // white-key width on phones (px)
+// phones: the arrow under the keys hides the pitch/mod wheels to make room for more keys
+let wheelsHidden = load('wheelsHidden', false);
+function paintWheelToggle() {
+  const b = $('#whToggle'); b.textContent = wheelsHidden ? '›' : '‹';
+  b.setAttribute('aria-expanded', String(!wheelsHidden)); b.setAttribute('aria-label', (wheelsHidden ? 'Show' : 'Hide') + ' pitch and mod wheels');
+}
+$('#whToggle').addEventListener('click', () => { wheelsHidden = !wheelsHidden; store('wheelsHidden', wheelsHidden); paintWheelToggle(); layout(); });
+paintWheelToggle();
+// keyboard scrollbar (phones): drag the thumb, or tap the track to centre the keys there
+{
+  const outer = $('#kbOuter'), bar = $('#kbBar'), thumb = $('#kbThumb');
+  const paint = () => {
+    const sw = outer.scrollWidth, cw = outer.clientWidth, over = sw - cw;
+    bar.classList.toggle('full', over <= 1);
+    thumb.style.width = (100 * Math.min(1, cw / sw)) + '%';
+    thumb.style.left = (over > 0 ? 100 * outer.scrollLeft / sw : 0) + '%';
+    bar.setAttribute('aria-valuenow', over > 0 ? Math.round(100 * outer.scrollLeft / over) : 0);
+  };
+  outer.addEventListener('scroll', paint, { passive: true });
+  new ResizeObserver(paint).observe(outer);
+  new ResizeObserver(paint).observe($('#keyboard'));
+  bar.addEventListener('pointerdown', e => {
+    e.preventDefault(); capture(bar, e.pointerId);
+    const r = bar.getBoundingClientRect(), scale = () => outer.scrollWidth / r.width;
+    if (e.target !== thumb) {   // tap on the track: centre the view on that point
+      outer.scrollLeft = (e.clientX - r.left) * scale() - outer.clientWidth / 2;
+    }
+    let lx = e.clientX;
+    const mv = ev => { outer.scrollLeft += (ev.clientX - lx) * scale(); lx = ev.clientX; };
+    const up = () => { bar.removeEventListener('pointermove', mv); bar.removeEventListener('pointerup', up); bar.removeEventListener('pointercancel', up); thumb.classList.remove('drag'); };
+    thumb.classList.add('drag');
+    bar.addEventListener('pointermove', mv); bar.addEventListener('pointerup', up); bar.addEventListener('pointercancel', up);
+  });
+  bar.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); outer.scrollBy({ left: (e.key === 'ArrowLeft' ? -3 : 3) * KEY_W }); }
+  });
+  bar.tabIndex = 0;
+  paint();
+}
 // Pinch on the module strip zooms the modules only (the page itself never zooms). The range runs
 // from "every module visible" (no spare space either side) up to large, focused on the fingers.
 const zoom = {
@@ -555,7 +595,8 @@ function layout() {
   const du = mode === 1 ? clamp(u * 1.25, .72, 1) : mode === 2 ? .7 : land ? clamp(H / 640, .5, .66) : clamp((W + 12) / 480, .55, .9);
   document.documentElement.style.setProperty('--du', du.toFixed(3));
   $('#keyboard').style.height = (mode === 3 ? 170 * du : 312 * du) + 'px';
-  if (mode === 3) $('#keyboard').style.width = (19 * 40) + 'px'; else $('#keyboard').style.width = '';
+  if (mode === 3) $('#keyboard').style.width = (19 * KEY_W) + 'px'; else $('#keyboard').style.width = '';
+  document.body.classList.toggle('noWheels', mode === 3 && wheelsHidden);
   buildDeck(mode === 3);
   buildRear(mode === 3);
   layoutMode = mode;
@@ -999,10 +1040,10 @@ function scaleChanged() { saveGlobal(); paintScale(); }
   if (!Array.isArray(G.mask) || G.mask.length !== 12) G.mask = Array(12).fill(true);
   paintScale();
 })();
-$('#kbLeft').addEventListener('click', () => $('#kbOuter').scrollBy({ left: -7 * 40, behavior: 'smooth' }));
-$('#kbLeft2').addEventListener('click', () => $('#kbOuter').scrollBy({ left: -7 * 40, behavior: 'smooth' }));
-$('#kbRight2').addEventListener('click', () => $('#kbOuter').scrollBy({ left: 7 * 40, behavior: 'smooth' }));
-$('#kbRight').addEventListener('click', () => $('#kbOuter').scrollBy({ left: 7 * 40, behavior: 'smooth' }));
+$('#kbLeft').addEventListener('click', () => $('#kbOuter').scrollBy({ left: -7 * KEY_W, behavior: 'smooth' }));
+$('#kbLeft2').addEventListener('click', () => $('#kbOuter').scrollBy({ left: -7 * KEY_W, behavior: 'smooth' }));
+$('#kbRight2').addEventListener('click', () => $('#kbOuter').scrollBy({ left: 7 * KEY_W, behavior: 'smooth' }));
+$('#kbRight').addEventListener('click', () => $('#kbOuter').scrollBy({ left: 7 * KEY_W, behavior: 'smooth' }));
 
 // computer keyboard: tracker layout by physical key position, starting on the panel's low F.
 // Bottom letter row = white keys, row above = black keys (gaps at B–C and E–F, as on a piano);
