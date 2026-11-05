@@ -276,9 +276,9 @@ class Knob {
         else this.change(d / (fine() ? 2400 : 230));
         showTip(this.id, el);
       };
-      const up = () => {
+      const up = ev => {
         el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
-        if (sel && moved < 5) setP(this.id, (state.p[this.id] + 1) % this.n);
+        if (sel && moved < 5 && ev.type === 'pointerup') setP(this.id, (state.p[this.id] + 1) % this.n);
         hideTip();
       };
       el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
@@ -353,7 +353,8 @@ function makeJack(spec, m) {
   const el = mk('div', 'jack' + (spec.out ? ' out' : ''), m, JACK_SVG); place(el, spec.x, spec.y);
   const nm = (spec.label || 'mult').replace('<br>', ' ');
   el.dataset.jack = spec.id; el.setAttribute('aria-label', nm + ' jack');
-  jacks[spec.id] = { el, out: spec.out, label: nm };
+  const t = m.querySelector('.title'), mod = m.classList.contains('m-osc') ? (spec.x < 165 ? 'OSC 1' : 'OSC 2') : t ? t.textContent : '';
+  jacks[spec.id] = { el, out: spec.out, label: nm, full: (mod ? mod + ' ' : '') + nm };
   if (spec.label) label(m, spec.x, spec.y + (spec.label.includes('<br>') ? 33 : 28), spec.label, 'lbl sm' + (spec.out ? ' out' : ''));
   bindJack(el, spec.id);
 }
@@ -377,7 +378,7 @@ function buildModule(spec, parent) {
       case 'sync': {
         const b = mk('button', 'sqbtn', m, '<i></i>'); place(b, it.x, it.y); b.setAttribute('aria-label', 'Sync');
         label(m, it.x, it.y + 57, it.label);
-        b.addEventListener('pointerdown', e => { e.preventDefault(); syncPress(); });
+        b.addEventListener('click', e => { e.preventDefault(); syncPress(); });
         ctrls.sync = { spec: it, render() { b.classList.toggle('on', !!state.p.sync); b.classList.toggle('blink', gsActive); } };
         ctrls.sync.render(); break;
       }
@@ -427,7 +428,8 @@ function layout() {
   const one = 2087, two = 1040, three = 346;
   if (W / one >= 0.56) { u = Math.min(1.05, W / one); mode = 1; }
   else if (W >= 640) { u = Math.min(0.95, W / two); mode = 2; }
-  else { u = Math.min(1.1, (W + 16) / three); mode = 3; }
+  else { u = 0.6; mode = 3; }   // phone: refined below once the bar and deck are measured
+  const sc = $('#wrap'), ratio = sc.scrollWidth > sc.clientWidth ? sc.scrollLeft / (sc.scrollWidth - sc.clientWidth) : 0;
   document.documentElement.style.setProperty('--u', u.toFixed(4));
   document.body.classList.toggle('L3', mode === 3);
   document.body.classList.toggle('dock', mode !== 1);
@@ -437,6 +439,15 @@ function layout() {
   if (mode === 3) $('#keyboard').style.width = (19 * 40) + 'px'; else $('#keyboard').style.width = '';
   buildDeck(mode === 3);
   layoutMode = mode;
+  const deckH = $('#deck').offsetHeight, barH = $('.bar').offsetHeight;
+  document.documentElement.style.setProperty('--deckH', deckH + 'px');
+  document.documentElement.style.setProperty('--barH', barH + 'px');
+  if (mode === 3) {
+    // the whole panel (rear row + module row = 744 units tall) fits the free height; scroll sideways
+    const avail = window.innerHeight - barH - deckH - 16;
+    document.documentElement.style.setProperty('--u', clamp(avail / 744, 0.4, 1).toFixed(4));
+    sc.scrollLeft = ratio * Math.max(0, sc.scrollWidth - sc.clientWidth);
+  }
   requestAnimationFrame(() => {
     document.documentElement.style.setProperty('--deckH', $('#deck').offsetHeight + 'px');
     drawCables();
@@ -449,6 +460,13 @@ new ResizeObserver(() => drawCables()).observe(panel);
 const COLORS = ['#d84a3a', '#e9a43b', '#3d8fd6', '#47ad6c', '#9b62c9', '#e8e1d2', '#2b2b2b', '#e46aa0'];
 let colorI = load('colorI', 0);
 let pending = null, dragC = null;
+// tap-to-patch selection: stays selected while you scroll; tap the same jack again to cancel
+function setPending(id) {
+  pending = id; markTargets(id);
+  const chip = $('#patchChip');
+  if (id) { chip.querySelector('b').textContent = jacks[id].full; chip.hidden = false; } else chip.hidden = true;
+  drawCables();
+}
 function jackXY(id) {
   const j = jacks[id]; if (!j) return [0, 0];
   const r = j.el.getBoundingClientRect(), p = panel.getBoundingClientRect();
@@ -494,36 +512,82 @@ function patchChanged() { post({ t: 'patch', c: state.cables.map(c => [c.a, c.b]
 function markTargets(from) {
   for (const id in jacks) { const ok = from && validPair(from, id); jacks[id].el.classList.toggle('target', !!ok); jacks[id].el.classList.toggle('dim', !!from && !ok && id !== from); }
 }
+// while a cable is being dragged near the edge of the scrolling module strip, scroll it
+const scroller = $('#wrap');
+let dragPt = null, edgeRaf = 0;
+function dragTo(cx, cy) {
+  if (!dragC) return;
+  const p = panel.getBoundingClientRect(); dragC.x = cx - p.left; dragC.y = cy - p.top;
+  const t = document.elementFromPoint(cx, cy), je = t && t.closest('.jack');
+  if (dragC.hot && dragC.hot !== je) dragC.hot.classList.remove('hot');
+  dragC.hot = je; if (je) je.classList.add('hot');
+  drawCables();
+}
+function edgeLoop() {
+  edgeRaf = 0;
+  if (!dragC || !dragPt) return;
+  const r = scroller.getBoundingClientRect(), zone = Math.min(64, r.width * 0.14);
+  const canX = scroller.scrollWidth > scroller.clientWidth, canY = scroller.scrollHeight > scroller.clientHeight;
+  let vx = 0, vy = 0;
+  if (canX) { if (dragPt.x < r.left + zone) vx = -(r.left + zone - dragPt.x) / zone; else if (dragPt.x > r.right - zone) vx = (dragPt.x - (r.right - zone)) / zone; }
+  if (canY) { if (dragPt.y < r.top + zone) vy = -(r.top + zone - dragPt.y) / zone; else if (dragPt.y > r.bottom - zone && dragPt.y < r.bottom) vy = (dragPt.y - (r.bottom - zone)) / zone; }
+  // layouts where the page itself scrolls (tablet / landscape): scroll the window vertically instead,
+  // using the area between the top bar and the docked keyboard as the visible region
+  let page = false;
+  if (!canX && !canY) {
+    const top = $('.bar').getBoundingClientRect().bottom, deck = document.body.classList.contains('dock') ? $('#deck').getBoundingClientRect().top : window.innerHeight;
+    if (dragPt.y < top + zone) vy = -(top + zone - dragPt.y) / zone; else if (dragPt.y > deck - zone) vy = (dragPt.y - (deck - zone)) / zone;
+    page = true;
+  }
+  vx = clamp(vx, -1, 1); vy = clamp(vy, -1, 1);
+  if (vx || vy) {
+    const dx = Math.sign(vx) * vx * vx * 22 + vx * 4, dy = Math.sign(vy) * vy * vy * 16 + vy * 3;
+    if (page) window.scrollBy(0, dy); else { scroller.scrollLeft += dx; scroller.scrollTop += dy; }
+    dragTo(dragPt.x, dragPt.y);
+  }
+  edgeRaf = requestAnimationFrame(edgeLoop);
+}
 function bindJack(el, id) {
+  el.addEventListener('contextmenu', e => { e.preventDefault(); const here = state.cables.filter(c => c.a === id || c.b === id); if (here.length) removeCable(here[here.length - 1]); });
   el.addEventListener('pointerdown', e => {
     if (e.button > 0) return;
     e.preventDefault();
-    const x0 = e.clientX, y0 = e.clientY; let started = false, hot = null;
-    const pid = e.pointerId;
+    const x0 = e.clientX, y0 = e.clientY; let started = false;
+    const pid = e.pointerId, touch = e.pointerType !== 'mouse';
+    // touch: holding a patched jack arms it (release = pull its newest cable, drag = move that plug)
+    let armed = false;
+    const holdT = touch ? setTimeout(() => {
+      if (!started && state.cables.some(c => c.a === id || c.b === id)) { armed = true; el.classList.add('armed'); if (navigator.vibrate) navigator.vibrate(12); }
+    }, 450) : 0;
     const mv = ev => {
       if (ev.pointerId !== pid) return;
       if (!started && Math.hypot(ev.clientX - x0, ev.clientY - y0) > 7) {
-        started = true; pending = null;
-        // a plain drag always starts a new cable; Alt-drag (or press-and-hold on touch) moves the newest plug here
+        started = true; clearTimeout(holdT); el.classList.remove('armed');
+        if (pending) setPending(null);
+        // a plain drag always starts a new cable; Alt-drag (or hold-then-drag on touch) moves the newest plug here
         const here = state.cables.filter(c => c.a === id || c.b === id);
-        const move = here.length && (e.altKey || (e.pointerType !== 'mouse' && ev.timeStamp - e.timeStamp > 450));
+        const move = here.length && (e.altKey || armed);
         if (move) { const c = here[here.length - 1]; dragC = { fixed: c.a === id ? c.b : c.a, moving: c, color: c.color }; state.cables = state.cables.filter(x => x !== c); }
         else dragC = { fixed: id, color: COLORS[colorI % COLORS.length] };
         markTargets(dragC.fixed);
       }
       if (started) {
-        const p = panel.getBoundingClientRect(); dragC.x = ev.clientX - p.left; dragC.y = ev.clientY - p.top;
-        const t = document.elementFromPoint(ev.clientX, ev.clientY), je = t && t.closest('.jack');
-        if (hot && hot !== je) hot.classList.remove('hot');
-        hot = je; if (je) je.classList.add('hot');
-        drawCables();
+        dragPt = { x: ev.clientX, y: ev.clientY };
+        dragTo(ev.clientX, ev.clientY);
+        if (!edgeRaf) edgeRaf = requestAnimationFrame(edgeLoop);
       }
     };
     const up = ev => {
       if (ev.pointerId !== pid) return;
+      clearTimeout(holdT); el.classList.remove('armed');
       window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
-      if (hot) hot.classList.remove('hot');
-      if (!started) { tapJack(id); return; }
+      dragPt = null;
+      if (!started) {
+        if (ev.type === 'pointercancel') return;
+        if (armed) { const here = state.cables.filter(c => c.a === id || c.b === id); if (here.length) removeCable(here[here.length - 1]); return; }
+        tapJack(id, touch); return;
+      }
+      if (dragC.hot) dragC.hot.classList.remove('hot');
       const t = document.elementFromPoint(ev.clientX, ev.clientY), je = t && t.closest('.jack');
       const fixed = dragC.fixed, color = dragC.color, wasMoving = !!dragC.moving;
       dragC = null; markTargets(null);
@@ -533,17 +597,23 @@ function bindJack(el, id) {
     window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
   });
 }
-function tapJack(id) {
+// tap patching. Touch: a tap always selects (patched or not), tapping the same jack again
+// cancels, tapping any other jack connects. Mouse: clicking a patched jack with nothing
+// selected pulls its newest cable, as before.
+function tapJack(id, touch) {
   if (pending) {
-    const p = pending; pending = null; markTargets(null);
+    const p = pending; setPending(null);
     if (p !== id && validPair(p, id)) connect(p, id);
-    drawCables(); return;
+    return;
   }
   const here = state.cables.filter(c => c.a === id || c.b === id);
-  if (here.length) { removeCable(here[here.length - 1]); return; }
-  pending = id; markTargets(id); drawCables();
+  if (!touch && here.length) { removeCable(here[here.length - 1]); return; }
+  setPending(id);
 }
-document.addEventListener('pointerdown', e => { if (pending && !e.target.closest('.jack')) { pending = null; markTargets(null); drawCables(); } });
+// a mouse click on empty panel still cancels; on touch only the jack itself (or the chip) does, so scrolling keeps it
+document.addEventListener('pointerdown', e => { if (pending && e.pointerType === 'mouse' && !e.target.closest('.jack, #patchChip')) setPending(null); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && pending) setPending(null); });
+$('#patchChip button').addEventListener('click', () => setPending(null));
 
 // ---------------------------------------------------------------- left-hand controller
 const pressed = {};

@@ -302,18 +302,19 @@ body.L3 #scaleBar { font-size: 13px; gap: 4px; }
 body.L3 #scaleBar .sbl, body.L3 #scaleInfo { display: none; }
 
 /* ---------------------------------------------------------------- responsive */
-body.dock #wrap { padding-bottom: calc(var(--deckH, 200px) + 20px); }
+body.dock:not(.L3) #wrap { padding-bottom: calc(var(--deckH, 200px) + 20px); }
 body.dock .kbnav { display: block; }
-body.L3 .mod-row .m-mod { order: 1; }
-body.L3 .mod-row .m-osc { order: 2; }
-body.L3 .mod-row .m-arp { order: 3; }
-body.L3 .mod-row .m-mix { order: 4; }
-body.L3 .mod-row .m-filter { order: 5; }
-body.L3 .mod-row .m-env { order: 6; }
-body.L3 .mod-row .m-util { order: 7; }
-body.L3 .mod-row .m-outcol { order: 8; }
-body.L3 #panel { flex-direction: column-reverse; }
-body.L3 .rear-row { justify-content: center; }
+/* phone: the whole panel as one horizontal strip between the bar and the docked deck */
+body.L3 { overflow: hidden; height: 100dvh; }
+body.L3 #wrap {
+  position: fixed; left: 0; right: 0; top: var(--barH, 50px); bottom: var(--deckH, 200px);
+  padding: 8px 10px; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin; scrollbar-color: #4a423b transparent;
+}
+body.L3 #panel { width: max-content; max-width: none; margin: 0; }
+body.L3 .mod-row { flex-wrap: nowrap; justify-content: flex-start; }
+body.L3 .rear-row { flex-wrap: nowrap; }
+body.L3 .knob, body.L3 .slider { touch-action: pan-x; }
 @media (max-width: 760px) {
   .bar { gap: 6px; padding: 6px 8px; }
   .sub, #scope { display: none; }
@@ -323,3 +324,17 @@ body.L3 .rear-row { justify-content: center; }
   #btnCables { display: none; }
   #wrap { padding: 10px 4px; }
 }
+
+/* tap-to-patch selection */
+.jack.armed .nut { fill: #f07a4a; }
+#patchChip {
+  position: fixed; z-index: 45; left: 50%; top: calc(var(--barH, 50px) + 8px); transform: translateX(-50%);
+  display: flex; align-items: center; gap: 4px; max-width: calc(100vw - 24px);
+  background: #2a1d10; border: 1px solid var(--led); color: #ffd8a0; border-radius: 999px;
+  padding: 4px 6px 4px 14px; font-size: 15px; white-space: nowrap; box-shadow: 0 6px 18px #000a;
+}
+#patchChip[hidden] { display: none; }
+#patchChip b { color: #fff; }
+#patchChip .pc-hint { overflow: hidden; text-overflow: ellipsis; color: #d9b98c; }
+#patchChip button { background: none; border: 0; color: #ffd8a0; font-size: 20px; line-height: 1; padding: 2px 8px; cursor: pointer; }
+@media (max-width: 760px) { #patchChip .pc-hint { display: none; } }

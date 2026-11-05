@@ -65,6 +65,7 @@
   </div>
 </section>
 
+<div id="patchChip" hidden>Patching from <b></b><span class="pc-hint"> · tap a jack to connect · tap it again to cancel</span><button aria-label="Cancel patching">×</button></div>
 <div id="tip" hidden></div>
 <div id="toast" hidden></div>
 
@@ -108,7 +109,7 @@
       <h3>Knobs</h3>
       <p>Drag up/down (or sideways). Hold <b>Shift</b> for very fine adjustment; on touch screens, tap the panel's <b>SHIFT</b> button to latch it. Double-click resets. The mouse wheel and arrow keys also work.</p>
       <h3>Patching</h3>
-      <p>Drag from one jack to another. Or tap a jack, then tap its destination. Any jack can connect to any other, and every jack takes as many cables as you like: dragging always starts a new one. Tap a patched jack to pull its newest cable; <b>Alt</b>-drag (or press and hold, then drag, on touch) to move a plug, dropping it in empty space to pull it. Everything joined by cables is solved as one passive circuit, using the impedances in the Grandmother manual: audio outputs are 2 kΩ, control outputs 5 Ω, inputs 90–110 kΩ. Two audio outputs in the mult mix half and half, a control output joined to anything wins, fighting control outputs meet in the middle, and an input joined only to other inputs reads 0 V. As the manual advises, only audio outputs are meant to be merged. Patching into an input overrides the internal connection behind it, like the hardware's normalled routing. The four <b>MULT</b> jacks are wired together. Outputs have dark labels.</p>
+      <p>Drag from one jack to another. Or tap a jack, then tap its destination. Any jack can connect to any other, and every jack takes as many cables as you like: dragging always starts a new one. With a mouse, click a patched jack (or right-click it) to pull its newest cable, and <b>Alt</b>-drag to move a plug; drop a plug in empty space to pull it. On touch screens a tap always selects a jack, and it stays selected while you scroll: tap another jack to connect, or the same jack again to cancel. Press and hold a patched jack, then let go to pull its newest cable, or drag to move that plug. Dragging a cable to the edge of the screen scrolls the panel. Everything joined by cables is solved as one passive circuit, using the impedances in the Grandmother manual: audio outputs are 2 kΩ, control outputs 5 Ω, inputs 90–110 kΩ. Two audio outputs in the mult mix half and half, a control output joined to anything wins, fighting control outputs meet in the middle, and an input joined only to other inputs reads 0 V. As the manual advises, only audio outputs are meant to be merged. Patching into an input overrides the internal connection behind it, like the hardware's normalled routing. The four <b>MULT</b> jacks are wired together. Outputs have dark labels.</p>
       <h3>Arpeggiator and sequencer</h3>
       <p>Choose <b>ARP</b> or <b>SEQ</b>, press <b>PLAY</b>, then hold notes. <b>HOLD</b> latches. <b>TAP</b> three times sets tempo; hold TAP for a second to leave tap tempo.</p>
       <p>To record: set <b>REC</b>, pick a slot with <b>OCT/SEQ</b>, and play notes. While in REC, PLAY adds a <b>TIE</b>, HOLD adds a <b>REST</b>, TAP sets an <b>ACCENT</b>. Holding one note while pressing the next records legato. Switch back to SEQ and press PLAY. Switching to REC while a sequence plays lets you overwrite steps live.</p>

@@ -31,6 +31,9 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
   - **Outputs:** audio outputs are 2 kΩ, most of them AC coupled. The reverb output is 1 kΩ. Control outputs are 5 Ω, with a current limit.
   - **Inputs:** 90 kΩ for pitch and linear FM, 110 kΩ for envelope amount and high pass, 100 kΩ for everything else.
   - **Behaviour:** two audio outputs in the mult mix half and half. A control output joined to anything wins. Fighting control outputs meet in the middle. An input joined only to other inputs reads 0 V.
+- **Layouts:** one row on wide screens, two rows on tablets, and a horizontally scrolling strip on phones, with the keyboard and controls docked at the bottom.
+  - **Touch patching:** a tapped jack stays selected while you scroll. Tap another jack to connect, or the same one again to cancel. Holding a patched jack and letting go pulls its newest cable; holding then dragging moves that plug.
+  - **Auto-scroll:** dragging a cable to the edge of the screen scrolls the panel (sideways on phones, up and down on tablets).
 - **Keyboard:** 32 keys on screen.
   - The computer keyboard uses the tracker layout from modularaudio, starting on the low F: Z/A rows for the first octave, Q/number rows above, covering all 32 keys.
   - ← / → are <KB / KB>.
