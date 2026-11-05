@@ -35,8 +35,10 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
   - **Phone header:** one row (patch, menu, power) plus a module navigator that jumps along the strip and highlights what's in view. MIDI, Settings, Save, Help and cable visibility move into the ⋯ menu.
   - **Strip layout:** the MIDI / ARP-SEQ CV / AUDIO modules stack in a column at the end of the strip, so every module gets the full height.
   - **KEYS:** hides or shows the keyboard for a bigger patching view.
+  - **Module zoom:** pinch the module area to zoom just the modules, from "every module visible" (no spare space either side) up to large, focused between your fingers. The page itself never zooms, so the keyboard stays docked. ⋯ → Reset module zoom fits the modules to the screen height again.
+  - **Disconnecting:** click or right-click a patched jack (mouse), or press and hold it (touch), to open a menu of its cables. Each row pulls exactly that cable, and hovering a row highlights it. The menu also has Disconnect all and Add another cable.
   - **Touch patching:** a tapped jack stays selected while you scroll, and a bar above the keyboard names it (◀ / ▶ shows which way it is; tap the bar to scroll back). Tap another jack to connect, or the same one again to cancel.
-  - **Touch gestures:** a quick sideways swipe from a jack scrolls. A vertical drag, or a short hold then a drag in any direction, draws a cable. Holding a patched jack and letting go pulls its newest cable.
+  - **Touch gestures:** a quick sideways swipe from a jack scrolls. A vertical drag, or a short hold then a drag in any direction, draws a cable. Holding a patched jack opens its disconnect menu; hold then drag moves its newest plug.
   - **Hit areas:** jacks have enlarged touch targets.
   - **Auto-scroll:** dragging a cable to the edge of the screen scrolls the panel (sideways on phones, up and down on tablets).
 - **Keyboard:** 32 keys on screen.
@@ -44,6 +46,10 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
   - ← / → are <KB / KB>.
   - Scale lock offers the seven modes with a root, or a custom note set, and snaps to the nearest note.
 - **MIDI:** Web MIDI in and out, covering notes, pitch bend, mod wheel, sustain, clock and the CC map.
+
+**CPU mode** (Settings): Auto turns on Lite for touch devices.
+- Lite roughly halves the load: the analog core runs at the base rate, the filter uses the classic ladder with a high-frequency tuning correction, the spring tank uses two springs without the high-frequency path, and smoothing and drift update at a control rate.
+- Full is unchanged in sound, but now about 15% faster from exact optimisations: cached coefficients, a fast cosine for the measured saw, and a series form of the mixer curve in its linear range.
 
 The analog core (oscillators, mixer, filter, envelope, VCA) runs 2x oversampled in an AudioWorklet (4x selectable in Settings). The ladder runs at a further 2x internally. The spring tank runs at half the base rate, plus one full-rate path for the high-frequency chirps.
 

@@ -14,7 +14,7 @@ const DEF = { arpRate: .45, arpMode: 0, arpDir: 0, arpOct: 0, lfoRate: .45, lfoW
   hpf: 0, att: .5, glide: 0, fine: .5, modWheel: 0, instGain: 0, triplet: 0, legato: 0 };
 const GDEF = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bend: 2, extMode: 0, ppqnIn: 1, ppqnOut: 1, kbRange: 0,
   local: 1, glideType: 0, gatedGlide: 1, transpose: 0, tapPersist: 0, velRange: 0, o2Range: 7, clkOutMode: 0, midiOutCh: -1,
-  drift: .5, warm: 0, bleed: .3, os: 2, filt: 1, saw: 1, extGain: .5, cables: 'show', scale: 'chromatic', root: 0, mask: Array(12).fill(true) };
+  drift: .5, warm: 0, bleed: .3, os: 2, filt: 1, saw: 1, cpu: 'auto', extGain: .5, cables: 'show', scale: 'chromatic', root: 0, mask: Array(12).fill(true) };
 const PPQN = [1,2,3,4,5,6,7,8,9,10,11,12,24,48];
 const DIVN = ['4 whole notes','3 whole notes','2 whole notes','dotted whole','whole','dotted half','half','dotted quarter','quarter',
   'dotted 8th','8th','dotted 16th','16th','dotted 32nd','32nd','dotted 64th','64th'];
@@ -269,6 +269,7 @@ class Knob {
       let lx = e.clientX, ly = e.clientY, moved = 0, acc = 0;
       showTip(this.id, el);
       const mv = ev => {
+        if (pinch) return;
         const dy = ly - ev.clientY, dx = ev.clientX - lx; lx = ev.clientX; ly = ev.clientY;
         moved += Math.abs(dx) + Math.abs(dy);
         const d = dy + dx * 0.6;
@@ -278,7 +279,7 @@ class Knob {
       };
       const up = ev => {
         el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
-        if (sel && moved < 5 && ev.type === 'pointerup') setP(this.id, (state.p[this.id] + 1) % this.n);
+        if (sel && moved < 5 && ev.type === 'pointerup' && !pinch) setP(this.id, (state.p[this.id] + 1) % this.n);
         hideTip();
       };
       el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
@@ -336,7 +337,7 @@ class Slider {
       }
       let ly = e.clientY; showTip(this.id, el);
       const px = () => el.getBoundingClientRect().height * h / (h + 30);
-      const mv = ev => { const d = ly - ev.clientY; ly = ev.clientY; setP(this.id, clamp(state.p[this.id] + d / px() / (fine() ? 10 : 1), 0, 1)); showTip(this.id, el); };
+      const mv = ev => { if (pinch) return; const d = ly - ev.clientY; ly = ev.clientY; setP(this.id, clamp(state.p[this.id] + d / px() / (fine() ? 10 : 1), 0, 1)); showTip(this.id, el); };
       const up = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); hideTip(); };
       el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up);
     });
@@ -422,6 +423,57 @@ function buildDeck(compact) {
 
 // ---------------------------------------------------------------- layout scaling
 let layoutMode = 0;
+// Pinch on the module strip zooms the modules only (the page itself never zooms). The range runs
+// from "every module visible" (no spare space either side) up to large, focused on the fingers.
+const zoom = {
+  fit: 0.6, z: load('zoom', 1), unitsW: 2400, u: 0.6,
+  range() {
+    const sc = $('#wrap'), all = (sc.clientWidth - 20) / this.unitsW;
+    return [Math.min(this.fit, all), Math.max(this.fit, 1.6)];
+  },
+  set(u, focus) {
+    const [lo, hi] = this.range(); u = clamp(u, lo, hi);
+    const sc = $('#wrap'), old = this.u;
+    let fx = 0, fy = 0;
+    if (focus) { fx = (focus.x + sc.scrollLeft - panel.offsetLeft) / old; fy = (focus.y + sc.scrollTop - panel.offsetTop) / old; }
+    this.u = u; document.documentElement.style.setProperty('--u', u.toFixed(4));
+    // at the "everything visible" end, trim any leftover overflow (a few parts don't scale linearly)
+    if (u <= lo * 1.0001) for (let i = 0; i < 3; i++) {
+      const over = sc.scrollWidth - sc.clientWidth; if (over <= 0) break;
+      const cw = sc.clientWidth - 20; this.u = u = u * cw / (cw + over + 0.5); document.documentElement.style.setProperty('--u', u.toFixed(4));
+    }
+    if (focus) { sc.scrollLeft = panel.offsetLeft + fx * u - focus.x; sc.scrollTop = panel.offsetTop + fy * u - focus.y; }
+    drawCables();
+  },
+  save() { this.z = this.u / this.fit; store('zoom', this.z); },
+  reset() { this.z = 1; store('zoom', 1); this.set(this.fit, null); },
+};
+let pinch = null;
+{
+  const sc = $('#wrap');
+  const dist = t => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const mid = t => { const r = sc.getBoundingClientRect(); return { x: (t[0].clientX + t[1].clientX) / 2 - r.left, y: (t[0].clientY + t[1].clientY) / 2 - r.top }; };
+  sc.addEventListener('touchstart', e => {
+    if (!document.body.classList.contains('L3') || e.touches.length !== 2) return;
+    pinch = { d0: dist(e.touches), u0: zoom.u };
+    cancelGestures();
+  }, { passive: true, capture: true });
+  sc.addEventListener('touchmove', e => {
+    if (!pinch || e.touches.length !== 2) return;
+    if (e.cancelable) e.preventDefault();
+    zoom.set(pinch.u0 * dist(e.touches) / pinch.d0, mid(e.touches));
+  }, { passive: false, capture: true });
+  const end = e => { if (pinch && e.touches.length < 2) { pinch.done = true; zoom.save(); if (!e.touches.length) pinch = null; } };
+  sc.addEventListener('touchend', end, { capture: true }); sc.addEventListener('touchcancel', end, { capture: true });
+}
+// a pinch beginning mid-gesture cancels whatever the first finger was doing
+function cancelGestures() {
+  hideTip();
+  if (dragC) { if (dragC.hot) dragC.hot.classList.remove('hot'); const mvC = dragC.moving; dragC = null; markTargets(null); if (mvC) { state.cables.push(mvC); patchChanged(); } else drawCables(); }
+}
+// keep the page itself from zooming (iOS ignores user-scalable=no)
+['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+document.addEventListener('touchmove', e => { if (e.touches.length > 1 && !e.target.closest('#wrap') && e.cancelable) e.preventDefault(); }, { passive: false });
 let deckHidden = load('deckHidden', false);
 $('#modNav').appendChild($('#deckToggle'));
 $('#deckToggle').addEventListener('click', () => {
@@ -465,7 +517,7 @@ function layout() {
   const one = 2087, two = 1040, three = 346;
   const coarse = matchMedia('(pointer: coarse)').matches, H = window.innerHeight;
   const land = coarse && H < 560 && W + 24 > H;           // phone held sideways
-  if (W < 640 || land) { u = 0.6; mode = 3; }             // phone: refined below once the bar and deck are measured
+  if (W < 640 || land || (coarse && W / one < 0.56)) { u = 0.6; mode = 3; }   // phones and touch tablets: refined below
   else if (W / one >= 0.56) { u = Math.min(1.05, W / one); mode = 1; }
   else { u = Math.min(0.95, W / two); mode = 2; }
   document.body.classList.toggle('land', mode === 3 && land);
@@ -487,7 +539,10 @@ function layout() {
     // one row of modules (628 units tall; the rear-panel modules stack in a column at the end)
     // fills the free height; scroll sideways
     const avail = window.innerHeight - barH - deckH - 16;
-    document.documentElement.style.setProperty('--u', clamp(avail / 628, land ? 0.32 : 0.4, 1.1).toFixed(4));
+    zoom.fit = clamp(avail / 628, land ? 0.32 : 0.4, 1.1);
+    document.documentElement.style.setProperty('--u', zoom.fit.toFixed(4));
+    zoom.unitsW = panel.offsetWidth / zoom.fit;
+    zoom.set(zoom.fit * zoom.z, null);
     navActive();
     sc.scrollLeft = ratio * Math.max(0, sc.scrollWidth - sc.clientWidth);
   }
@@ -502,7 +557,7 @@ new ResizeObserver(() => drawCables()).observe(panel);
 // ---------------------------------------------------------------- cables
 const COLORS = ['#d84a3a', '#e9a43b', '#3d8fd6', '#47ad6c', '#9b62c9', '#e8e1d2', '#2b2b2b', '#e46aa0'];
 let colorI = load('colorI', 0);
-let pending = null, dragC = null;
+let pending = null, dragC = null, hiJack = null, hiCable = null;
 // tap-to-patch selection: stays selected while you scroll; tap the same jack again to cancel
 function setPending(id) {
   pending = id; markTargets(id);
@@ -526,16 +581,18 @@ function cablePath(x1, y1, x2, y2) {
   return `M${x1} ${y1} C${x1 + (x2 - x1) * .15} ${y1 + sag} ${x2 - (x2 - x1) * .15} ${y2 + sag} ${x2} ${y2}`;
 }
 function drawCables() {
-  svgC.setAttribute('width', panel.scrollWidth); svgC.setAttribute('height', panel.scrollHeight);
+  // size from the panel's own box (not scrollWidth, which would include this layer and keep stale space after zooming out)
+  svgC.setAttribute('width', panel.offsetWidth); svgC.setAttribute('height', panel.offsetHeight);
   const w = Math.max(4, parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--u')) * 8);
   let s = '';
   const all = state.cables.slice();
   for (const c of all) {
     const [x1, y1] = jackXY(c.a), [x2, y2] = jackXY(c.b);
     const d = cablePath(x1, y1, x2, y2);
-    s += `<path class="shadow" d="${d}" stroke-width="${w + 3}" transform="translate(2 4)"/>` +
-      `<path class="cable" d="${d}" stroke="${c.color}" stroke-width="${w}" stroke-opacity=".93"/>` +
-      `<circle class="plug" cx="${x1}" cy="${y1}" r="${w * .95}" fill="${c.color}"/><circle class="plug" cx="${x2}" cy="${y2}" r="${w * .95}" fill="${c.color}"/>`;
+    const fade = hiJack && c.a !== hiJack && c.b !== hiJack, hot = hiCable === c;
+    s += `<g opacity="${fade ? .18 : 1}"><path class="shadow" d="${d}" stroke-width="${w + 3}" transform="translate(2 4)"/>` +
+      `<path class="cable" d="${d}" stroke="${c.color}" stroke-width="${hot ? w * 1.7 : w}" stroke-opacity=".93"/>` +
+      `<circle class="plug" cx="${x1}" cy="${y1}" r="${w * .95}" fill="${c.color}"/><circle class="plug" cx="${x2}" cy="${y2}" r="${w * .95}" fill="${c.color}"/></g>`;
   }
   if (dragC) {
     const [x1, y1] = jackXY(dragC.fixed);
@@ -611,7 +668,7 @@ function bindJack(el, id) {
     else ts.pan = true;
   }, { passive: false });
   const owned = () => !document.body.classList.contains('L3') || (ts && ts.own);
-  el.addEventListener('contextmenu', e => { e.preventDefault(); const here = state.cables.filter(c => c.a === id || c.b === id); if (here.length) removeCable(here[here.length - 1]); });
+  el.addEventListener('contextmenu', e => { e.preventDefault(); openJackMenu(id); });
   el.addEventListener('pointerdown', e => {
     if (e.button > 0) return;
     e.preventDefault();
@@ -624,6 +681,7 @@ function bindJack(el, id) {
     }, 450) : 0;
     const mv = ev => {
       if (ev.pointerId !== pid) return;
+      if (pinch) { clearTimeout(holdT); el.classList.remove('armed'); armed = false; return; }
       if (touch && !owned()) return;
       if (!started && Math.hypot(ev.clientX - x0, ev.clientY - y0) > 7) {
         started = true; clearTimeout(holdT); el.classList.remove('armed');
@@ -653,8 +711,8 @@ function bindJack(el, id) {
         return;
       }
       if (!started) {
-        if (ev.type === 'pointercancel' || (ts && ts.pan)) return;
-        if (armed) { const here = state.cables.filter(c => c.a === id || c.b === id); if (here.length) removeCable(here[here.length - 1]); return; }
+        if (ev.type === 'pointercancel' || (ts && ts.pan) || pinch) return;
+        if (armed) { openJackMenu(id); return; }
         tapJack(id, touch); return;
       }
       if (dragC.hot) dragC.hot.classList.remove('hot');
@@ -668,21 +726,59 @@ function bindJack(el, id) {
   });
 }
 // tap patching. Touch: a tap always selects (patched or not), tapping the same jack again
-// cancels, tapping any other jack connects. Mouse: clicking a patched jack with nothing
-// selected pulls its newest cable, as before.
+// cancels, tapping any other jack connects; press and hold a patched jack for its disconnect
+// menu. Mouse: clicking a patched jack with nothing selected opens the disconnect menu.
 function tapJack(id, touch) {
+  if (jmClosedFor === id) { jmClosedFor = null; return; }
+  jmClosedFor = null;
   if (pending) {
     const p = pending; setPending(null);
     if (p !== id && validPair(p, id)) connect(p, id);
     return;
   }
   const here = state.cables.filter(c => c.a === id || c.b === id);
-  if (!touch && here.length) { removeCable(here[here.length - 1]); return; }
+  if (!touch && here.length) { openJackMenu(id); return; }
   setPending(id);
 }
+// Disconnect menu: lists every cable on a jack so you can pull exactly the one you mean.
+// Opens on a patched jack with a click/right-click (mouse) or a press-and-hold (touch).
+const jm = $('#jackMenu');
+function openJackMenu(id) {
+  const here = state.cables.filter(c => c.a === id || c.b === id);
+  if (!here.length) return;
+  if (pending) setPending(null);
+  hiJack = id; hiCable = null;
+  jm.innerHTML = '';
+  mk('div', 'jm-h', jm, jacks[id].full);
+  for (const c of here.slice().reverse()) {
+    const other = c.a === id ? c.b : c.a;
+    const row = mk('button', 'jm-row', jm, `<i style="background:${c.color}"></i><span>${jacks[other].full}</span><b aria-hidden="true">×</b>`);
+    row.setAttribute('aria-label', 'Disconnect ' + jacks[other].full);
+    row.addEventListener('pointerenter', () => { hiCable = c; drawCables(); });
+    row.addEventListener('pointerleave', () => { if (hiCable === c) { hiCable = null; drawCables(); } });
+    row.addEventListener('click', e => { e.stopPropagation(); removeCable(c); if (state.cables.some(x => x.a === id || x.b === id)) openJackMenu(id); else closeJackMenu(); });
+  }
+  if (here.length > 1) mk('button', 'jm-act', jm, 'Disconnect all').addEventListener('click', e => { e.stopPropagation(); state.cables = state.cables.filter(c => c.a !== id && c.b !== id); patchChanged(); closeJackMenu(); });
+  mk('button', 'jm-act', jm, 'Add another cable from here').addEventListener('click', e => { e.stopPropagation(); closeJackMenu(); setPending(id); });
+  jm.hidden = false;
+  const r = jacks[id].el.getBoundingClientRect(), mw = jm.offsetWidth, mh = jm.offsetHeight;
+  let x = r.left + r.width / 2 - mw / 2, y = r.bottom + 8;
+  if (y + mh > window.innerHeight - 8) y = r.top - mh - 8;
+  jm.style.left = clamp(x, 8, window.innerWidth - mw - 8) + 'px'; jm.style.top = clamp(y, 8, window.innerHeight - mh - 8) + 'px';
+  drawCables();
+}
+function closeJackMenu() { if (jm.hidden) return; jm.hidden = true; hiJack = null; hiCable = null; drawCables(); }
+let jmClosedFor = null;   // pressing the same jack again just closes its menu
+document.addEventListener('pointerdown', e => {
+  if (jm.hidden || e.target.closest('#jackMenu')) return;
+  const j = e.target.closest('.jack'); jmClosedFor = j && j.dataset.jack === hiJack ? hiJack : null;
+  closeJackMenu();
+}, true);
+$('#wrap').addEventListener('scroll', closeJackMenu, { passive: true });
+window.addEventListener('resize', closeJackMenu);
 // a mouse click on empty panel still cancels; on touch only the jack itself (or the chip) does, so scrolling keeps it
 document.addEventListener('pointerdown', e => { if (pending && e.pointerType === 'mouse' && !e.target.closest('.jack, #patchChip')) setPending(null); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && pending) setPending(null); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (!jm.hidden) closeJackMenu(); else if (pending) setPending(null); } });
 $('#patchChip button').addEventListener('click', e => { e.stopPropagation(); setPending(null); });
 $('#patchChip').addEventListener('click', () => { if (pending) jacks[pending].el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); });
 
@@ -967,10 +1063,13 @@ function syncPress() {
   setP('sync', state.p.sync ? 0 : 1);
 }
 function saveGlobal() { store('global', G); }
+// lite CPU mode: Auto turns it on for touch devices (phones and tablets)
+const TOUCH_DEVICE = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
+const liteOn = () => G.cpu === 'lite' || (G.cpu === 'auto' && TOUCH_DEVICE);
 function applyGlobal() {
   post({ t: 'g', v: { midiCh: G.midiCh, midiClkIn: G.midiClkIn, midiClkOut: G.midiClkOut, prio: G.prio, bendUp: G.bend, bendDn: G.bend,
     extMode: G.extMode, ppqnIn: G.ppqnIn, ppqnOut: G.ppqnOut, kbRange: G.kbRange, glideType: G.glideType, gatedGlide: G.gatedGlide,
-    transpose: G.transpose, tapPersist: G.tapPersist, velRange: G.velRange, o2Range: G.o2Range, clkOutMode: G.clkOutMode, drift: G.drift, warm: G.warm, bleed: G.bleed, os: G.os, filt: G.filt, saw: G.saw } });
+    transpose: G.transpose, tapPersist: G.tapPersist, velRange: G.velRange, o2Range: G.o2Range, clkOutMode: G.clkOutMode, drift: G.drift, warm: G.warm, bleed: G.bleed, os: G.os, filt: G.filt, saw: G.saw, lite: liteOn() ? 1 : 0 } });
   post({ t: 'p', k: 'instGain', v: extOn ? G.extGain : 0 });
   saveGlobal(); drawCables();
   $('#btnCables').textContent = 'Cables: ' + G.cables;
@@ -988,12 +1087,17 @@ function buildSettings() {
   const E = $('#emuList'); E.innerHTML = '';
   const rng = (name, k, min, max, step) => { const lab = mk('label', '', E, `<span>${name}</span>`); const r = mk('input', '', lab); r.type = 'range'; r.min = min; r.max = max; r.step = step; r.value = G[k]; r.addEventListener('input', () => { G[k] = +r.value; applyGlobal(); }); };
   const opt = (name, k, opts) => { const lab = mk('label', '', E, `<span>${name}</span>`); const s = mk('select', '', lab); opts.forEach(([v, t]) => { const o = mk('option', '', s, t); o.value = v; }); s.value = G[k]; s.addEventListener('change', () => { G[k] = isNaN(+s.value) ? s.value : +s.value; applyGlobal(); }); };
+  opt('CPU mode', 'cpu', [['auto', `Auto (${TOUCH_DEVICE ? 'Lite on this device' : 'Full on this device'})`], ['lite', 'Lite'], ['full', 'Full']]);
+  mk('p', 'small', E, 'Lite roughly halves the CPU load: the analog core runs without oversampling, the filter uses the classic ladder model, and the spring tank is lighter. Full uses the settings below.');
   rng('Oscillator drift', 'drift', 0, 1, .01);
   opt('Cold-start warm-up drift', 'warm', [[0, 'off'], [1, 'on']]);
   rng('VCA control bleed (attack thump)', 'bleed', 0, 1, .01);
   opt('Sawtooth shape', 'saw', [[1, 'measured (Moog Voyager recordings)'], [0, 'ideal ramp']]);
   opt('Filter model', 'filt', [[1, 'zero-delay ladder, Newton solve'], [0, 'Huovilainen ladder (classic)']]);
   opt('Oversampling', 'os', [[2, '2x (lighter on CPU)'], [4, '4x (cleaner FM and sync)']]);
+  // in Lite the filter model and oversampling are fixed; show that rather than silently ignoring them
+  const lock = () => { for (const lab of E.querySelectorAll('label')) { const t = lab.firstChild.textContent; if (t === 'Filter model' || t === 'Oversampling') { lab.style.opacity = liteOn() ? .45 : 1; lab.querySelector('select').disabled = liteOn(); } } };
+  E.querySelector('select').addEventListener('change', lock); lock();
   rng('External input gain', 'extGain', 0, 1, .01);
   opt('Cables', 'cables', [['show', 'show'], ['dim', 'dim'], ['hide', 'hide']]);
 }
@@ -1256,6 +1360,7 @@ more.addEventListener('click', async e => {
   if (a === 'midi') openMidi();
   if (a === 'settings') { buildSettings(); $('#dlgSettings').showModal(); }
   if (a === 'help') $('#dlgHelp').showModal();
+  if (a === 'zoom') zoom.reset();
   if (a === 'cables') { G.cables = { show: 'dim', dim: 'hide', hide: 'show' }[G.cables]; applyGlobal(); }
   if (a === 'export') {
     const blob = new Blob([JSON.stringify({ format: 'progenitor-patch', version: 2, ...snapshot(state.name), seqs }, null, 1)], { type: 'application/json' });

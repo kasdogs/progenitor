@@ -341,7 +341,7 @@ body.L3 .knob, body.L3 .slider { touch-action: pan-x; }
 
 /* ---------------------------------------------------------------- phone refinements */
 html { -webkit-text-size-adjust: 100%; }
-body { touch-action: manipulation; }
+html, body { touch-action: pan-x pan-y; }   /* no page pinch-zoom; the module strip handles pinch itself */
 .module, #deck, .bar { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 #modNav, .menu .ph, #deckToggle, .sbnav { display: none; }
 .menu hr { border: 0; border-top: 1px solid #3a342e; margin: 4px 6px; }
@@ -370,7 +370,8 @@ body.L3.land .brand { display: none; }
 
 /* bigger touch targets for jacks, without changing how they look */
 body.L3 .jack { touch-action: pan-x; }
-body.L3 .jack::before { content: ""; position: absolute; inset: -9px; border-radius: 50%; }
+body.L3 .jack::before { content: ""; position: absolute; inset: calc(clamp(1px, var(--u) * 14px, 9px) * -1); border-radius: 50%; }   /* grows with zoom, never into neighbours */
+.module .title { pointer-events: none; }
 body.L3 .lbl { font-size: max(8px, calc(var(--u) * 13px)); }
 body.L3 .lbl.sm { font-size: max(7px, calc(var(--u) * 10.5px)); }
 
@@ -400,3 +401,26 @@ body.L3.land #kbRight2, body.L3.land #kbLeft2 { margin: 0; }
 body.L3 #panel { flex-direction: row; align-items: flex-start; gap: calc(var(--u) * 14px); }
 body.L3 .rear-row { order: 2; flex-direction: column; justify-content: flex-start; gap: calc(var(--u) * 14px); }
 body.L3.land .patchbox { flex: 0 1 200px; min-width: 120px; }
+
+/* disconnect menu */
+#jackMenu { position: fixed; top: 0; left: 0; right: auto; min-width: 220px; max-width: min(320px, calc(100vw - 16px)); z-index: 70; }
+#jackMenu[hidden] { display: none; }
+#jackMenu .jm-h { padding: 6px 10px 4px; font-size: 13px; font-weight: 700; letter-spacing: .06em; color: #a99d8d; }
+#jackMenu .jm-row { display: flex !important; align-items: center; gap: 8px; width: 100%; padding: 8px 10px !important; min-height: 40px; font-size: 15px; color: #e9e1d0; background: none; border: 0; cursor: pointer; text-align: left; border-radius: 6px; }
+#jackMenu .jm-row i { flex: none; width: 14px; height: 14px; border-radius: 50%; box-shadow: inset 0 0 0 1px #0006; }
+#jackMenu .jm-row span { flex: 1; }
+#jackMenu .jm-row b { color: #f07a4a; font-size: 18px; }
+#jackMenu .jm-row:hover, #jackMenu .jm-row:focus-visible { background: #2c2723; }
+#jackMenu .jm-act { display: block; width: 100%; text-align: left; padding: 8px 10px; min-height: 38px; font-size: 14px; color: #c9bfae; background: none; border: 0; border-top: 1px solid #2c2723; cursor: pointer; }
+#jackMenu .jm-act:hover { background: #2c2723; }
+
+/* zoomed far out: labels keep shrinking (their minimum sizes only apply at normal zoom), and the
+   panel sits in the vertical middle of the strip instead of leaving the space below it */
+.lbl { font-size: max(calc(var(--u) * 13px), min(9px, calc(var(--u) * 20px))); }
+.lbl.sm { font-size: max(calc(var(--u) * 10.5px), min(8px, calc(var(--u) * 16px))); }
+.module .title { font-size: max(calc(var(--u) * 18px), min(11px, calc(var(--u) * 26px))); }
+.osnum { font-size: max(calc(var(--u) * 17px), min(11px, calc(var(--u) * 26px))); }
+body.L3 .lbl { font-size: max(calc(var(--u) * 13px), min(8px, calc(var(--u) * 20px))); }
+body.L3 .lbl.sm { font-size: max(calc(var(--u) * 10.5px), min(7px, calc(var(--u) * 16px))); }
+body.L3 #wrap { display: flex; }
+body.L3 #panel { margin: auto 0; flex: none; }
