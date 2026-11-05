@@ -399,7 +399,13 @@ body.L3.land #kbRight2, body.L3.land #kbLeft2 { margin: 0; }
 
 /* phones: rear-panel modules (MIDI, CV, audio) stack in a column at the end of the strip */
 body.L3 #panel { flex-direction: row; align-items: flex-start; gap: calc(var(--u) * 14px); }
-body.L3 .rear-row { order: 2; flex-direction: column; justify-content: flex-start; gap: calc(var(--u) * 14px); }
+body.L3 .rear-row { order: 2; flex-direction: row; justify-content: flex-start; align-items: stretch; gap: calc(var(--u) * 14px); }
+.rear-sep { display: none; }
+body.L3 .rear-sep {
+  display: block; flex: none; align-self: stretch; width: max(1px, calc(var(--u) * 2px));
+  margin: calc(var(--u) * 24px) calc(var(--u) * 4px); background: #4a423b; border-radius: 1px;
+}
+body.L3 .m-rear .mtext { white-space: normal; text-align: center; width: calc(var(--u) * 110px); }
 body.L3.land .patchbox { flex: 0 1 200px; min-width: 120px; }
 
 /* disconnect menu */

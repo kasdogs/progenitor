@@ -33,7 +33,7 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
   - **Behaviour:** two audio outputs in the mult mix half and half. A control output joined to anything wins. Fighting control outputs meet in the middle. An input joined only to other inputs reads 0 V.
 - **Layouts:** one row on wide screens, two rows on tablets, and a scrolling strip on phones (portrait and landscape), with the keyboard and controls docked at the bottom.
   - **Phone header:** one row (patch, menu, power) plus a module navigator that jumps along the strip and highlights what's in view. MIDI, Settings, Save, Help and cable visibility move into the ⋯ menu.
-  - **Strip layout:** the MIDI / ARP-SEQ CV / AUDIO modules stack in a column at the end of the strip, so every module gets the full height.
+  - **Strip layout:** the MIDI, ARP/SEQ CV and AUDIO modules switch to upright, full-height versions on the right of the main modules, after a thin divider (the navigator's I/O button jumps there). Desktop and tablet keep the horizontal rear-panel versions.
   - **KEYS:** hides or shows the keyboard for a bigger patching view.
   - **Module zoom:** pinch the module area to zoom just the modules, from "every module visible" (no spare space either side) up to large, focused between your fingers. The page itself never zooms, so the keyboard stays docked. ⋯ → Reset module zoom fits the modules to the screen height again.
   - **Disconnecting:** click or right-click a patched jack (mouse), or press and hold it (touch), to open a menu of its cables. Each row pulls exactly that cable, and hovering a row highlights it. The menu also has Disconnect all and Add another cable.

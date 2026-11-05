@@ -109,6 +109,17 @@ const REAR = [
     J('revOut', 40, 56, 'REVERB<br>OUT', 1), J('euroOut', 124, 56, 'EURORACK<br>OUT', 1), { t: 'ext', x: 208, y: 56, label: 'EXT. INPUT' },
     { t: 'led', id: 'outLed', x: 292, y: 50 }, TX(292, 84, 'MAIN OUT', 'lbl out') ] },
 ];
+// phones: the same three modules stood upright, full height, side by side after a thin divider
+const REAR_V = [
+  { id: 'midi', title: 'MIDI', w: 130, h: 628, items: [
+    K('fine', 65, 150, 'FINE TUNE'), { t: 'led', id: 'midiLed', x: 65, y: 290 }, TX(65, 314, 'MIDI IN', 'lbl sm'),
+    { t: 'midiText', x: 65, y: 380 } ] },
+  { id: 'cv', title: 'ARP/SEQ CV', w: 150, h: 628, items: [
+    J('clkOut', 75, 115, 'CLOCK OUT', 1), J('resetIn', 75, 250, 'RESET IN'), J('onoffIn', 75, 385, 'ON/OFF IN'), J('clkIn', 75, 520, 'CLOCK IN') ] },
+  { id: 'audio', title: 'AUDIO', w: 150, h: 628, items: [
+    J('revOut', 75, 115, 'REVERB OUT', 1), J('euroOut', 75, 250, 'EURORACK OUT', 1), { t: 'ext', x: 75, y: 385, label: 'EXT. INPUT' },
+    { t: 'led', id: 'outLed', x: 75, y: 510 }, TX(75, 540, 'MAIN OUT', 'lbl out') ] },
+];
 const LHC = { id: 'lhc', title: '', w: 268, h: 312, items: [
   K('glide', 54, 66, 'GLIDE'), { t: 'led', id: 'legLed', x: 54, y: 140 }, TX(54, 158, 'LEGATO', 'lbl sm'),
   { t: 'pb', id: 'play', x: 138, y: 38, label: 'PLAY', sub: '(TIE)' }, { t: 'pb', id: 'hold', x: 188, y: 38, label: 'HOLD', sub: '(REST)' },
@@ -403,8 +414,23 @@ function buildModule(spec, parent) {
 
 // ---------------------------------------------------------------- build panel
 const panel = $('#panel');
-const rearRow = mk('div', 'rear-row', panel);
-REAR.forEach(s => buildModule(s, rearRow));
+const rearRow = mk('div', 'rear-row m-rear', panel);
+let rearV = null, midiLabel = 'Connect MIDI…';
+// build the rear-panel modules horizontal (desktop, tablet) or upright (phone strip)
+function buildRear(vertical) {
+  if (rearV === vertical) return;
+  const first = rearV === null;
+  rearV = vertical;
+  const specs = vertical ? REAR_V : REAR;
+  for (const s of REAR) for (const it of s.items) if (it.t === 'jack') { if (!first && pending === it.id) setPending(null); delete jacks[it.id]; }
+  delete ctrls.fine;
+  rearRow.innerHTML = '';
+  if (vertical) mk('div', 'rear-sep', rearRow).setAttribute('aria-hidden', 'true');
+  specs.forEach(s => buildModule(s, rearRow));
+  leds.midiText.textContent = midiLabel;
+  if (typeof extOn !== 'undefined' && extOn) leds.ext.classList.add('on');
+}
+buildRear(false);
 const modRow = mk('div', 'mod-row', panel);
 MODS.forEach(s => {
   if (s.col) { const c = mk('div', 'col m-outcol', modRow); s.col.forEach(x => buildModule(x, c)); }
@@ -485,7 +511,7 @@ $('#deckToggle').addEventListener('click', () => {
 if (deckHidden) { $('#deckToggle').textContent = 'KEYS ▴'; $('#deckToggle').setAttribute('aria-expanded', 'false'); }
 
 // module navigator (phones): jump along the strip, highlight what is in view
-const NAV = [['arp', 'ARP/SEQ'], ['mod', 'MOD'], ['osc', 'OSC'], ['mix', 'MIX'], ['util', 'UTIL'], ['filter', 'FILTER'], ['env', 'ENV'], ['outcol', 'OUT']];
+const NAV = [['arp', 'ARP/SEQ'], ['mod', 'MOD'], ['osc', 'OSC'], ['mix', 'MIX'], ['util', 'UTIL'], ['filter', 'FILTER'], ['env', 'ENV'], ['outcol', 'OUT'], ['rear', 'I/O']];
 const navBtns = NAV.map(([id, t]) => {
   const b = mk('button', '', $('#modNav'), t); b.dataset.m = id;
   b.addEventListener('click', () => {
@@ -531,6 +557,7 @@ function layout() {
   $('#keyboard').style.height = (mode === 3 ? 170 * du : 312 * du) + 'px';
   if (mode === 3) $('#keyboard').style.width = (19 * 40) + 'px'; else $('#keyboard').style.width = '';
   buildDeck(mode === 3);
+  buildRear(mode === 3);
   layoutMode = mode;
   const deckH = $('#deck').offsetHeight, barH = $('.bar').offsetHeight;
   document.documentElement.style.setProperty('--deckH', deckH + 'px');
@@ -1106,7 +1133,7 @@ $('#btnHelp').addEventListener('click', () => $('#dlgHelp').showModal());
 $('#btnCables').addEventListener('click', () => { G.cables = { show: 'dim', dim: 'hide', hide: 'show' }[G.cables]; applyGlobal(); });
 
 // ---------------------------------------------------------------- external input
-let extOn = false, extStream = null, extSrc = null;
+var extOn = false, extStream = null, extSrc = null;   // var: read by buildRear before this line runs
 async function toggleExt() {
   await ensurePower();
   if (extOn) {
@@ -1147,7 +1174,8 @@ function refreshMidi() {
   midiOut = so.value === 'none' ? null : midi.outputs.get(so.value) || null;
   $('#midiStatus').textContent = `${midi.inputs.size} input(s), ${midi.outputs.size} output(s) found.`;
   const nIn = si.value === 'all' ? 'all inputs' : si.value === 'none' ? 'no input' : si.options[si.selectedIndex].text;
-  leds.midiText.textContent = nIn.length > 18 ? nIn.slice(0, 17) + '…' : nIn;
+  midiLabel = nIn.length > 14 ? nIn.slice(0, 13) + '…' : nIn;
+  leds.midiText.textContent = midiLabel;
 }
 $('#midiIn').addEventListener('change', e => { midiInId = e.target.value; store('midiIn', midiInId); refreshMidi(); });
 $('#midiOut').addEventListener('change', e => { midiOutId = e.target.value; store('midiOut', midiOutId); refreshMidi(); });
