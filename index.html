@@ -15,17 +15,24 @@
 <body>
 <header class="bar">
   <div class="brand"><span class="wm">PROGENITOR</span><span class="sub">semi-modular analog voice</span></div>
+  <nav id="modNav" aria-label="Jump to module"><button id="deckToggle" class="kt" aria-label="Hide keyboard" aria-expanded="true">KEYS ▾</button></nav>
   <div class="patchbox">
     <select id="patchSel" aria-label="Patch"></select>
     <button id="btnSave" title="Save patch">Save</button>
     <button id="btnMore" title="More patch options" aria-haspopup="true">⋯</button>
     <div id="moreMenu" class="menu" hidden>
+      <button data-act="save" class="ph">Save</button>
       <button data-act="saveas">Save as new…</button>
       <button data-act="export">Export patch file</button>
       <button data-act="import">Import patch file…</button>
       <button data-act="delete">Delete this patch</button>
       <button data-act="clear">Pull all cables</button>
       <button data-act="seqclear">Clear current sequence</button>
+      <hr class="ph">
+      <button data-act="midi" class="ph">MIDI…</button>
+      <button data-act="settings" class="ph">Settings…</button>
+      <button data-act="cables" class="ph" id="menuCables">Cables: show</button>
+      <button data-act="help" class="ph">Help</button>
     </div>
     <input id="fileIn" type="file" accept=".json,application/json" hidden>
   </div>
@@ -51,11 +58,13 @@
   <div id="whWrap"></div>
   <div id="kbCol">
     <div id="scaleBar">
+      <button class="sbnav" id="kbLeft2" aria-label="Scroll keys left">‹</button>
       <span class="sbl">SCALE LOCK</span>
       <select id="scaleSel" aria-label="Scale lock"></select>
       <select id="rootSel" aria-label="Key"></select>
       <button id="scaleEdit" title="Click keys to add or remove notes from the custom scale">Edit scale</button>
       <span id="scaleInfo"></span>
+      <button class="sbnav" id="kbRight2" aria-label="Scroll keys right">›</button>
     </div>
     <div id="kbScroll">
       <button class="kbnav" id="kbLeft" aria-label="Scroll keys left">‹</button>
@@ -65,7 +74,7 @@
   </div>
 </section>
 
-<div id="patchChip" hidden>Patching from <b></b><span class="pc-hint"> · tap a jack to connect · tap it again to cancel</span><button aria-label="Cancel patching">×</button></div>
+<div id="patchChip" hidden><span class="pc-dir"></span>Patching from <b></b><span class="pc-hint"> · tap a jack to connect · tap it again to cancel</span><button aria-label="Cancel patching">×</button></div>
 <div id="tip" hidden></div>
 <div id="toast" hidden></div>
 
@@ -107,9 +116,9 @@
       <h3>Playing</h3>
       <p>Click or touch the keys (lower on the key plays louder), or play two octaves from the computer keyboard: the <b>Z</b> row and <b>A</b> row start on the low F, and the <b>Q</b> row and number row continue an octave up, covering all 32 keys (labels are on the keys). <b>←</b> / <b>→</b> are the <b>&lt;KB</b> / <b>KB&gt;</b> octave buttons. <b>Space</b> is PLAY.</p><p><b>Scale lock</b> (above the keys) snaps every key to the nearest note of the chosen mode and key; <b>Custom</b> lets you click keys to pick the notes. It applies to the panel and computer keyboards, not MIDI input.</p>
       <h3>Knobs</h3>
-      <p>Drag up/down (or sideways). Hold <b>Shift</b> for very fine adjustment; on touch screens, tap the panel's <b>SHIFT</b> button to latch it. Double-click resets. The mouse wheel and arrow keys also work.</p>
+      <p>Drag up/down (or sideways; on phones, up/down only, since sideways swipes scroll the panel). Hold <b>Shift</b> for very fine adjustment; on touch screens, tap the panel's <b>SHIFT</b> button to latch it. Double-click resets. The mouse wheel and arrow keys also work.</p>
       <h3>Patching</h3>
-      <p>Drag from one jack to another. Or tap a jack, then tap its destination. Any jack can connect to any other, and every jack takes as many cables as you like: dragging always starts a new one. With a mouse, click a patched jack (or right-click it) to pull its newest cable, and <b>Alt</b>-drag to move a plug; drop a plug in empty space to pull it. On touch screens a tap always selects a jack, and it stays selected while you scroll: tap another jack to connect, or the same jack again to cancel. Press and hold a patched jack, then let go to pull its newest cable, or drag to move that plug. Dragging a cable to the edge of the screen scrolls the panel. Everything joined by cables is solved as one passive circuit, using the impedances in the Grandmother manual: audio outputs are 2 kΩ, control outputs 5 Ω, inputs 90–110 kΩ. Two audio outputs in the mult mix half and half, a control output joined to anything wins, fighting control outputs meet in the middle, and an input joined only to other inputs reads 0 V. As the manual advises, only audio outputs are meant to be merged. Patching into an input overrides the internal connection behind it, like the hardware's normalled routing. The four <b>MULT</b> jacks are wired together. Outputs have dark labels.</p>
+      <p>Drag from one jack to another. Or tap a jack, then tap its destination. Any jack can connect to any other, and every jack takes as many cables as you like: dragging always starts a new one. With a mouse, click a patched jack (or right-click it) to pull its newest cable, and <b>Alt</b>-drag to move a plug; drop a plug in empty space to pull it. On touch screens a tap always selects a jack, and it stays selected while you scroll: tap another jack to connect, or the same jack again to cancel (tap the bar at the bottom to scroll back to it). To drag a cable, drag up or down from a jack, or touch and hold briefly and then drag in any direction; a quick sideways swipe scrolls instead. Press and hold a patched jack and let go to pull its newest cable. Dragging a cable to the edge of the screen scrolls the panel. On phones the buttons along the top jump between modules, and <b>KEYS</b> hides or shows the keyboard (more room for patching). Everything joined by cables is solved as one passive circuit, using the impedances in the Grandmother manual: audio outputs are 2 kΩ, control outputs 5 Ω, inputs 90–110 kΩ. Two audio outputs in the mult mix half and half, a control output joined to anything wins, fighting control outputs meet in the middle, and an input joined only to other inputs reads 0 V. As the manual advises, only audio outputs are meant to be merged. Patching into an input overrides the internal connection behind it, like the hardware's normalled routing. The four <b>MULT</b> jacks are wired together. Outputs have dark labels.</p>
       <h3>Arpeggiator and sequencer</h3>
       <p>Choose <b>ARP</b> or <b>SEQ</b>, press <b>PLAY</b>, then hold notes. <b>HOLD</b> latches. <b>TAP</b> three times sets tempo; hold TAP for a second to leave tap tempo.</p>
       <p>To record: set <b>REC</b>, pick a slot with <b>OCT/SEQ</b>, and play notes. While in REC, PLAY adds a <b>TIE</b>, HOLD adds a <b>REST</b>, TAP sets an <b>ACCENT</b>. Holding one note while pressing the next records legato. Switch back to SEQ and press PLAY. Switching to REC while a sequence plays lets you overwrite steps live.</p>

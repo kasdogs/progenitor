@@ -422,18 +422,59 @@ function buildDeck(compact) {
 
 // ---------------------------------------------------------------- layout scaling
 let layoutMode = 0;
+let deckHidden = load('deckHidden', false);
+$('#modNav').appendChild($('#deckToggle'));
+$('#deckToggle').addEventListener('click', () => {
+  deckHidden = !deckHidden; store('deckHidden', deckHidden);
+  const b = $('#deckToggle'); b.textContent = deckHidden ? 'KEYS ▴' : 'KEYS ▾';
+  b.setAttribute('aria-expanded', String(!deckHidden)); b.setAttribute('aria-label', deckHidden ? 'Show keyboard' : 'Hide keyboard');
+  layout();
+});
+if (deckHidden) { $('#deckToggle').textContent = 'KEYS ▴'; $('#deckToggle').setAttribute('aria-expanded', 'false'); }
+
+// module navigator (phones): jump along the strip, highlight what is in view
+const NAV = [['arp', 'ARP/SEQ'], ['mod', 'MOD'], ['osc', 'OSC'], ['mix', 'MIX'], ['util', 'UTIL'], ['filter', 'FILTER'], ['env', 'ENV'], ['outcol', 'OUT']];
+const navBtns = NAV.map(([id, t]) => {
+  const b = mk('button', '', $('#modNav'), t); b.dataset.m = id;
+  b.addEventListener('click', () => {
+    const m = panel.querySelector('.m-' + id), sc = $('#wrap');
+    const left = m.getBoundingClientRect().left - panel.getBoundingClientRect().left;
+    sc.scrollTo({ left: Math.max(0, left - 8), behavior: 'smooth' });
+  });
+  return b;
+});
+let navRaf = 0;
+function navActive() {
+  navRaf = 0;
+  if (!document.body.classList.contains('L3')) return;
+  const sc = $('#wrap').getBoundingClientRect(), mid = sc.left + sc.width / 2;
+  let best = null, bd = Infinity;
+  for (const b of navBtns) {
+    const r = panel.querySelector('.m-' + b.dataset.m).getBoundingClientRect();
+    const d = mid < r.left ? r.left - mid : mid > r.right ? mid - r.right : 0;
+    if (d < bd) { bd = d; best = b; }
+  }
+  navBtns.forEach(b => b.classList.toggle('on', b === best));
+  if (best && bd === 0) { const nv = $('#modNav'), br = best.getBoundingClientRect(), nr = nv.getBoundingClientRect(); if (br.left < nr.left || br.right > nr.right) nv.scrollBy({ left: br.left - nr.left - 8 }); }
+  if (pending) chipDir();
+}
+$('#wrap').addEventListener('scroll', () => { if (!navRaf) navRaf = requestAnimationFrame(navActive); }, { passive: true });
 function layout() {
   const W = document.documentElement.clientWidth - 24;
   let u, mode;
   const one = 2087, two = 1040, three = 346;
-  if (W / one >= 0.56) { u = Math.min(1.05, W / one); mode = 1; }
-  else if (W >= 640) { u = Math.min(0.95, W / two); mode = 2; }
-  else { u = 0.6; mode = 3; }   // phone: refined below once the bar and deck are measured
+  const coarse = matchMedia('(pointer: coarse)').matches, H = window.innerHeight;
+  const land = coarse && H < 560 && W + 24 > H;           // phone held sideways
+  if (W < 640 || land) { u = 0.6; mode = 3; }             // phone: refined below once the bar and deck are measured
+  else if (W / one >= 0.56) { u = Math.min(1.05, W / one); mode = 1; }
+  else { u = Math.min(0.95, W / two); mode = 2; }
+  document.body.classList.toggle('land', mode === 3 && land);
+  document.body.classList.toggle('kbHide', mode === 3 && deckHidden);
   const sc = $('#wrap'), ratio = sc.scrollWidth > sc.clientWidth ? sc.scrollLeft / (sc.scrollWidth - sc.clientWidth) : 0;
   document.documentElement.style.setProperty('--u', u.toFixed(4));
   document.body.classList.toggle('L3', mode === 3);
   document.body.classList.toggle('dock', mode !== 1);
-  const du = mode === 1 ? clamp(u * 1.25, .72, 1) : mode === 2 ? .7 : clamp((W + 12) / 480, .55, .9);
+  const du = mode === 1 ? clamp(u * 1.25, .72, 1) : mode === 2 ? .7 : land ? clamp(H / 640, .5, .66) : clamp((W + 12) / 480, .55, .9);
   document.documentElement.style.setProperty('--du', du.toFixed(3));
   $('#keyboard').style.height = (mode === 3 ? 170 * du : 312 * du) + 'px';
   if (mode === 3) $('#keyboard').style.width = (19 * 40) + 'px'; else $('#keyboard').style.width = '';
@@ -443,9 +484,11 @@ function layout() {
   document.documentElement.style.setProperty('--deckH', deckH + 'px');
   document.documentElement.style.setProperty('--barH', barH + 'px');
   if (mode === 3) {
-    // the whole panel (rear row + module row = 744 units tall) fits the free height; scroll sideways
+    // one row of modules (628 units tall; the rear-panel modules stack in a column at the end)
+    // fills the free height; scroll sideways
     const avail = window.innerHeight - barH - deckH - 16;
-    document.documentElement.style.setProperty('--u', clamp(avail / 744, 0.4, 1).toFixed(4));
+    document.documentElement.style.setProperty('--u', clamp(avail / 628, land ? 0.32 : 0.4, 1.1).toFixed(4));
+    navActive();
     sc.scrollLeft = ratio * Math.max(0, sc.scrollWidth - sc.clientWidth);
   }
   requestAnimationFrame(() => {
@@ -464,8 +507,14 @@ let pending = null, dragC = null;
 function setPending(id) {
   pending = id; markTargets(id);
   const chip = $('#patchChip');
-  if (id) { chip.querySelector('b').textContent = jacks[id].full; chip.hidden = false; } else chip.hidden = true;
+  if (id) { chip.querySelector('b').textContent = jacks[id].full; chip.hidden = false; chipDir(); } else chip.hidden = true;
   drawCables();
+}
+function chipDir() {
+  const chip = $('#patchChip'); if (!pending) return;
+  const r = jacks[pending].el.getBoundingClientRect(), s = $('#wrap').getBoundingClientRect();
+  const off = layoutMode === 3 ? (r.right < s.left ? '◀ ' : r.left > s.right ? '▶ ' : '') : '';
+  chip.querySelector('.pc-dir').textContent = off;
 }
 function jackXY(id) {
   const j = jacks[id]; if (!j) return [0, 0];
@@ -548,6 +597,20 @@ function edgeLoop() {
   edgeRaf = requestAnimationFrame(edgeLoop);
 }
 function bindJack(el, id) {
+  // On phones jacks allow native sideways panning (touch-action: pan-x). The first move decides:
+  // a quick, mostly sideways swipe scrolls the strip; a vertical drag, or any drag after a short
+  // hold, belongs to the jack (a cable) and blocks the pan.
+  let ts = null;
+  el.addEventListener('touchstart', e => { const t = e.touches[0]; ts = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, t: e.timeStamp, own: false } : null; }, { passive: true });
+  el.addEventListener('touchmove', e => {
+    if (!ts) return;
+    if (ts.own) { if (e.cancelable) e.preventDefault(); return; }
+    const t = e.touches[0], dx = t.clientX - ts.x, dy = t.clientY - ts.y;
+    if (Math.abs(dx) + Math.abs(dy) < 3) return;
+    if (e.timeStamp - ts.t > 180 || Math.abs(dy) > Math.abs(dx) * 0.8) { ts.own = true; if (e.cancelable) e.preventDefault(); }
+    else ts.pan = true;
+  }, { passive: false });
+  const owned = () => !document.body.classList.contains('L3') || (ts && ts.own);
   el.addEventListener('contextmenu', e => { e.preventDefault(); const here = state.cables.filter(c => c.a === id || c.b === id); if (here.length) removeCable(here[here.length - 1]); });
   el.addEventListener('pointerdown', e => {
     if (e.button > 0) return;
@@ -561,6 +624,7 @@ function bindJack(el, id) {
     }, 450) : 0;
     const mv = ev => {
       if (ev.pointerId !== pid) return;
+      if (touch && !owned()) return;
       if (!started && Math.hypot(ev.clientX - x0, ev.clientY - y0) > 7) {
         started = true; clearTimeout(holdT); el.classList.remove('armed');
         if (pending) setPending(null);
@@ -582,8 +646,14 @@ function bindJack(el, id) {
       clearTimeout(holdT); el.classList.remove('armed');
       window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
       dragPt = null;
+      if (started && ev.type === 'pointercancel') {          // the browser took the gesture: put things back
+        if (dragC.hot) dragC.hot.classList.remove('hot');
+        const mvC = dragC.moving; dragC = null; markTargets(null);
+        if (mvC) { state.cables.push(mvC); patchChanged(); } else drawCables();
+        return;
+      }
       if (!started) {
-        if (ev.type === 'pointercancel') return;
+        if (ev.type === 'pointercancel' || (ts && ts.pan)) return;
         if (armed) { const here = state.cables.filter(c => c.a === id || c.b === id); if (here.length) removeCable(here[here.length - 1]); return; }
         tapJack(id, touch); return;
       }
@@ -613,7 +683,8 @@ function tapJack(id, touch) {
 // a mouse click on empty panel still cancels; on touch only the jack itself (or the chip) does, so scrolling keeps it
 document.addEventListener('pointerdown', e => { if (pending && e.pointerType === 'mouse' && !e.target.closest('.jack, #patchChip')) setPending(null); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && pending) setPending(null); });
-$('#patchChip button').addEventListener('click', () => setPending(null));
+$('#patchChip button').addEventListener('click', e => { e.stopPropagation(); setPending(null); });
+$('#patchChip').addEventListener('click', () => { if (pending) jacks[pending].el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); });
 
 // ---------------------------------------------------------------- left-hand controller
 const pressed = {};
@@ -806,6 +877,8 @@ function scaleChanged() { saveGlobal(); paintScale(); }
   paintScale();
 })();
 $('#kbLeft').addEventListener('click', () => $('#kbOuter').scrollBy({ left: -7 * 40, behavior: 'smooth' }));
+$('#kbLeft2').addEventListener('click', () => $('#kbOuter').scrollBy({ left: -7 * 40, behavior: 'smooth' }));
+$('#kbRight2').addEventListener('click', () => $('#kbOuter').scrollBy({ left: 7 * 40, behavior: 'smooth' }));
 $('#kbRight').addEventListener('click', () => $('#kbOuter').scrollBy({ left: 7 * 40, behavior: 'smooth' }));
 
 // computer keyboard: tracker layout by physical key position, starting on the panel's low F.
@@ -901,6 +974,7 @@ function applyGlobal() {
   post({ t: 'p', k: 'instGain', v: extOn ? G.extGain : 0 });
   saveGlobal(); drawCables();
   $('#btnCables').textContent = 'Cables: ' + G.cables;
+  $('#menuCables').textContent = 'Cables: ' + G.cables;
 }
 function buildSettings() {
   const L = $('#settingsList'); L.innerHTML = '';
@@ -1178,6 +1252,11 @@ more.addEventListener('click', async e => {
   const a = e.target.dataset.act; if (!a) return;
   more.hidden = true;
   if (a === 'saveas') savePatch(true);
+  if (a === 'save') savePatch(false);
+  if (a === 'midi') openMidi();
+  if (a === 'settings') { buildSettings(); $('#dlgSettings').showModal(); }
+  if (a === 'help') $('#dlgHelp').showModal();
+  if (a === 'cables') { G.cables = { show: 'dim', dim: 'hide', hide: 'show' }[G.cables]; applyGlobal(); }
   if (a === 'export') {
     const blob = new Blob([JSON.stringify({ format: 'progenitor-patch', version: 2, ...snapshot(state.name), seqs }, null, 1)], { type: 'application/json' });
     const url = URL.createObjectURL(blob), l = document.createElement('a');

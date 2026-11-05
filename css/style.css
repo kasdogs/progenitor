@@ -338,3 +338,65 @@ body.L3 .knob, body.L3 .slider { touch-action: pan-x; }
 #patchChip .pc-hint { overflow: hidden; text-overflow: ellipsis; color: #d9b98c; }
 #patchChip button { background: none; border: 0; color: #ffd8a0; font-size: 20px; line-height: 1; padding: 2px 8px; cursor: pointer; }
 @media (max-width: 760px) { #patchChip .pc-hint { display: none; } }
+
+/* ---------------------------------------------------------------- phone refinements */
+html { -webkit-text-size-adjust: 100%; }
+body { touch-action: manipulation; }
+.module, #deck, .bar { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+#modNav, .menu .ph, #deckToggle, .sbnav { display: none; }
+.menu hr { border: 0; border-top: 1px solid #3a342e; margin: 4px 6px; }
+body.L3 .menu .ph { display: block; }
+body.L3 .menu hr.ph { display: block; }
+
+/* compact header: one row of essentials, plus the module navigator */
+body.L3 .bar { gap: 6px; padding: 6px 8px; row-gap: 4px; }
+body.L3 .sub, body.L3 #scope, body.L3 #btnSave, body.L3 #btnCables, body.L3 #btnMidi, body.L3 #btnSettings, body.L3 #btnHelp { display: none; }
+body.L3 .brand { margin-right: 0; }
+body.L3 .wm { font-size: 13px; letter-spacing: .2em; }
+body.L3 .bar { flex-wrap: wrap; }
+body.L3 .patchbox { flex: 1 1 0; min-width: 0; }
+body.L3 .bar select { flex: 1 1 0; min-width: 0; width: 100%; max-width: none; }
+body.L3 .tools { flex: none; }
+body.L3 .tools { margin-left: 0; }
+body.L3 #modNav { display: flex; order: 10; flex: 1 0 100%; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+body.L3 #modNav::-webkit-scrollbar { display: none; }
+body.L3 #modNav button {
+  flex: 1 0 auto; min-height: 28px !important; padding: 2px 8px !important; font-size: 13px !important; font-weight: 600; letter-spacing: .06em;
+  background: #1a1715 !important; color: #a99d8d !important; border: 1px solid #2f2a26 !important; border-radius: 999px !important;
+}
+body.L3 #modNav button.on { color: #2a1404 !important; background: var(--led) !important; border-color: var(--led) !important; }
+body.L3.land #modNav { order: 0; flex: 1 1 auto; }
+body.L3.land .brand { display: none; }
+
+/* bigger touch targets for jacks, without changing how they look */
+body.L3 .jack { touch-action: pan-x; }
+body.L3 .jack::before { content: ""; position: absolute; inset: -9px; border-radius: 50%; }
+body.L3 .lbl { font-size: max(8px, calc(var(--u) * 13px)); }
+body.L3 .lbl.sm { font-size: max(7px, calc(var(--u) * 10.5px)); }
+
+/* selection chip sits just above the docked controls, out of the panel's way */
+body.L3 #patchChip { top: auto; bottom: calc(var(--deckH, 200px) + 8px); cursor: pointer; }
+.pc-dir { color: #fff; font-weight: 700; }
+
+/* keyboard arrows move into the scale-lock row on phones; keys get the full width */
+body.L3 .kbnav { display: none !important; }
+body.L3 .sbnav { display: inline-block; flex: none; width: 34px; font-size: 18px !important; padding: 0 !important; }
+body.L3 #kbRight2 { margin-left: auto; }
+body.L3 #scaleBar select { max-width: 46vw; }
+
+/* deck: hide/show the keyboard */
+body.L3 #deckToggle { display: block; order: 99; margin-left: 6px; border-style: dashed !important; }
+body.L3.kbHide #deck { display: none; }
+
+/* landscape phone: controls, wheels and keys side by side in one row */
+body.L3.land #deck { grid-template-columns: auto auto 1fr; grid-template-rows: auto 1fr; grid-template-areas: "lhc wh kbd" "sb wh kbd"; align-items: start; }
+body.L3.land #kbCol { display: contents; }
+body.L3.land #scaleBar { grid-area: sb; }
+body.L3.land #kbScroll { grid-area: kbd; }
+body.L3.land #lhcWrap { justify-self: start; }
+body.L3.land #kbRight2, body.L3.land #kbLeft2 { margin: 0; }
+
+/* phones: rear-panel modules (MIDI, CV, audio) stack in a column at the end of the strip */
+body.L3 #panel { flex-direction: row; align-items: flex-start; gap: calc(var(--u) * 14px); }
+body.L3 .rear-row { order: 2; flex-direction: column; justify-content: flex-start; gap: calc(var(--u) * 14px); }
+body.L3.land .patchbox { flex: 0 1 200px; min-width: 120px; }
