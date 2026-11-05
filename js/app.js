@@ -565,33 +565,64 @@ $('#deckToggle').addEventListener('click', () => {
 });
 if (deckHidden) { $('#deckToggle').textContent = 'KEYS ▴'; $('#deckToggle').setAttribute('aria-expanded', 'false'); }
 
-// module navigator (phones): jump along the strip, highlight what is in view
+// module navigator (phones): jump along the strip and highlight where you are.
+// - a tap highlights that button straight away and keeps it while the strip glides there
+//   (no flicker through the modules in between), and briefly lights the module up, which also
+//   shows where it is when everything already fits on screen
+// - scrolling by hand highlights the module at the left edge of the strip; once the strip
+//   is scrolled all the way right, the right-most module fully in view wins, so the last
+//   buttons (OUT, I/O) can light up too
 const NAV = [['arp', 'ARP/SEQ'], ['mod', 'MOD'], ['osc', 'OSC'], ['mix', 'MIX'], ['util', 'UTIL'], ['filter', 'FILTER'], ['env', 'ENV'], ['outcol', 'OUT'], ['rear', 'I/O']];
+const navMod = id => panel.querySelector('.m-' + id);
+let navLock = null, navOn = null, navLockT = 0;
+function navHighlight(id) {
+  if (id === navOn) return;
+  navOn = id;
+  let btn = null;
+  navBtns.forEach(b => { const on = b.dataset.m === id; b.classList.toggle('on', on); if (on) btn = b; });
+  if (btn) {   // keep the lit button in view in the nav row, without jerking it around
+    const nv = $('#modNav'), br = btn.getBoundingClientRect(), nr = nv.getBoundingClientRect();
+    if (br.left < nr.left + 4 || br.right > nr.right - 4) nv.scrollTo({ left: nv.scrollLeft + br.left - nr.left - (nr.width - br.width) / 2, behavior: 'smooth' });
+  }
+}
 const navBtns = NAV.map(([id, t]) => {
   const b = mk('button', '', $('#modNav'), t); b.dataset.m = id;
   b.addEventListener('click', () => {
-    const m = panel.querySelector('.m-' + id), sc = $('#wrap');
-    const left = m.getBoundingClientRect().left - panel.getBoundingClientRect().left;
-    sc.scrollTo({ left: Math.max(0, left - 8), behavior: 'smooth' });
+    const m = navMod(id), sc = $('#wrap');
+    const left = m.getBoundingClientRect().left - panel.getBoundingClientRect().left + panel.offsetLeft;
+    navLock = id; navHighlight(id);
+    clearTimeout(navLockT); navLockT = setTimeout(() => { navLock = null; }, 1200);   // safety: release after the glide
+    sc.scrollTo({ left: Math.max(0, left - 10), behavior: 'smooth' });
+    m.classList.remove('flash'); void m.offsetWidth; m.classList.add('flash');
   });
   return b;
 });
+$('#modNav').insertBefore($('#deckToggle'), null);   // KEYS stays last
 let navRaf = 0;
 function navActive() {
   navRaf = 0;
   if (!document.body.classList.contains('L3')) return;
-  const sc = $('#wrap').getBoundingClientRect(), mid = sc.left + sc.width / 2;
-  let best = null, bd = Infinity;
-  for (const b of navBtns) {
-    const r = panel.querySelector('.m-' + b.dataset.m).getBoundingClientRect();
-    const d = mid < r.left ? r.left - mid : mid > r.right ? mid - r.right : 0;
-    if (d < bd) { bd = d; best = b; }
-  }
-  navBtns.forEach(b => b.classList.toggle('on', b === best));
-  if (best && bd === 0) { const nv = $('#modNav'), br = best.getBoundingClientRect(), nr = nv.getBoundingClientRect(); if (br.left < nr.left || br.right > nr.right) nv.scrollBy({ left: br.left - nr.left - 8 }); }
   if (pending) chipDir();
+  if (navLock) return;
+  const sc = $('#wrap'), s = sc.getBoundingClientRect(), edge = s.left + 24;
+  const atEnd = sc.scrollLeft >= sc.scrollWidth - sc.clientWidth - 2 && sc.scrollWidth > sc.clientWidth;
+  let best = NAV[0][0];
+  for (const [id] of NAV) {
+    const r = navMod(id).getBoundingClientRect();
+    if (atEnd ? r.right <= s.right + 1 && r.left >= s.left - 1 : r.left <= edge) best = id;
+  }
+  navHighlight(best);
 }
-$('#wrap').addEventListener('scroll', () => { if (!navRaf) navRaf = requestAnimationFrame(navActive); }, { passive: true });
+{
+  const sc = $('#wrap');
+  sc.addEventListener('scroll', () => { if (!navRaf) navRaf = requestAnimationFrame(navActive); }, { passive: true });
+  // any scrolling by hand releases the tapped highlight
+  const release = () => { if (navLock) { navLock = null; clearTimeout(navLockT); } };
+  sc.addEventListener('touchstart', release, { passive: true });
+  sc.addEventListener('wheel', release, { passive: true });
+  sc.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse') release(); });
+  if ('onscrollend' in window) sc.addEventListener('scrollend', () => { if (navLock) { clearTimeout(navLockT); navLockT = setTimeout(() => { navLock = null; }, 150); } });
+}
 function layout() {
   const W = document.documentElement.clientWidth - 24;
   let u, mode;

@@ -448,3 +448,9 @@ body.L3 #kbFoot { display: flex; grid-area: foot; align-items: center; gap: 8px;
 #kbThumb { position: absolute; top: 50%; height: 14px; transform: translateY(-50%); min-width: 24px; background: #6b5f52; border-radius: 7px; box-shadow: 0 1px 3px #0008; }
 #kbThumb.drag, #kbBar:focus-visible #kbThumb { background: var(--led); }
 #kbBar.full #kbThumb { opacity: .35; }
+
+/* module navigator: brief highlight on the module you jumped to */
+.module.flash, .m-rear.flash, .m-outcol.flash .module { animation: modflash .7s ease-out; }
+@keyframes modflash { 0% { box-shadow: 0 0 0 calc(var(--u) * 4px) var(--led), 0 8px 18px #0005; } 100% { box-shadow: inset 0 0 0 calc(var(--u) * 1.5px) var(--card-edge), 0 2px 0 #0006, 0 8px 18px #0005; } }
+.m-rear.flash .module { animation: modflash .7s ease-out; }
+.m-rear.flash { animation: none; }
