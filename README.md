@@ -18,11 +18,14 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
   - **Cutoff:** the knob alone spans ~10 Hz–11 kHz; CV, envelope and tracking reach past 20 kHz.
   - **Resonance:** follows the measured Mother-32 ladder taper, with a dead zone to 10% and self-oscillation from ~80%. Passband gain drops as resonance rises.
   - **Self-oscillation tuning:** a pitch trim keeps it mostly within about ±13 cents.
-- **Envelope:** RC-style ADSR. Stage times run from ~1.5 ms (attack) and ~2 ms (decay, release) up to ~12 s. VCA modes are ENV, KB RLS and DRONE.
+- **Envelope:** RC-style ADSR. VCA modes are ENV, KB RLS and DRONE.
+  - **Knob law:** follows owner measurements of the circuit: ~2 ms at the very end of the track, jumping to ~30 ms almost at once, ~0.2 s at the first tick, ~0.7 s at 9 o'clock, ~2.2 s at noon and ~13 s fully up.
+  - **Control feedthrough:** a fast cutoff sweep leaks a small step into the ladder (the envelope "pop" at high resonance).
 - **Modulation:** the PITCH, CUTOFF and PULSE WIDTH AMT knobs have an audio-style taper and are scaled by the MOD wheel, as on the hardware. LFO (sine, saw, ramp, square) from 0.07 Hz to 1.3 kHz, with sync and sample & hold. The sine is shaped from the triangle (~1.5% distortion), as in the original 921-style circuit.
 - **Noise:** white, with a gentle top-end rolloff.
 - **Utilities:** a 1-pole high pass, a bipolar attenuator (normalled to +8 V) and a 4-jack passive mult.
 - **Spring reverb:** a parametric model of the 3-spring, long-decay Belton tank: stretched-allpass chirp cascades in damped, modulated loops, plus a high-frequency chirp path. Decay is ~2.7 s. Tap the SPRING REVERB title to knock the tank.
+  - **REVERB IN** replaces only the tank's feed; the dry path is always the VCA. The recovery amp is rail-limited, so a full-level signal patched straight in drives the tank hard without swamping the output.
 - **Arp/Seq:** arpeggiator, and three 256-step sequences with tie, rest, accent and legato. Includes tap tempo, MIDI clock, external clock (or step advance), and clock, reset and on/off jacks.
 - **Glide and keyboard CV:** generated the way firmware does it, stepped at a control rate and smoothed after the DAC.
 - **Global settings:** the documented settings, entered from the panel (hold HOLD + press SYNC, then use the keys) or from the Settings dialog.
@@ -30,6 +33,7 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
   - **Circuit solve:** each group of connected jacks is solved as a passive circuit every sample, using the impedances in the manual's patch point index.
   - **Outputs:** audio outputs are 2 kΩ, most of them AC coupled. The reverb output is 1 kΩ. Control outputs are 5 Ω, with a current limit.
   - **Inputs:** 90 kΩ for pitch and linear FM, 110 kΩ for envelope amount and high pass, 100 kΩ for everything else.
+  - **Normals at outputs:** joining another output to an output jack also changes what that output feeds internally. For example, ATT OUT into FILTER OUTPUT changes what the VCA hears.
   - **Behaviour:** two audio outputs in the mult mix half and half. A control output joined to anything wins. Fighting control outputs meet in the middle. An input joined only to other inputs reads 0 V.
 - **Layouts:** one row on wide screens, two rows on tablets, and a scrolling strip on phones (portrait and landscape), with the keyboard and controls docked at the bottom.
   - **Phone header:** one row (patch, menu, power) plus a module navigator that jumps along the strip and highlights what's in view. MIDI, Settings, Save, Help and cable visibility move into the ⋯ menu.
@@ -62,6 +66,14 @@ Other analog behaviour modelled:
 - a small adjustable VCA control bleed (attack thump)
 - a saturating input stage on the high pass
 
+## Factory patches
+
+- **Grandmother manual patches:** all 16 sheets from the manual, under "Grandmother manual patches".
+- **Lisa Bella Donna patchbook:** the 20 patches from the *Grandmother Exploration Patchbook*, named "(LBD) …".
+- **How they were transcribed:** knob pointers were measured from the sheet artwork (300° sweep), switches from the circled options, and cables traced end to end.
+- **What each patch shows:** its sheet's playing notes appear when it loads and as the menu tooltip.
+- **Volume:** left at the default for every patch.
+
 ## Sources
 
 - Moog Grandmother manual (v2): patch point index, ranges and behaviour.
@@ -71,6 +83,7 @@ Other analog behaviour modelled:
 - Paschou, Esqueda, Välimäki & Mourjopoulos, APSIPA 2017: Mother-32 ladder measurements.
 - Välimäki, Parker & Abel, JAES 2010, and Gamper, Parker & Välimäki, DAFx-11: spring reverb models.
 - Belton/Accutronics BMN3AB3B1B datasheet values.
+- Moog forum owner measurements of the envelope ("What is the approx duration of the ENV stages on the Grandmother?", "Grandmother Decay Time Bad Scaling"): stage-time knob law.
 
 No hardware schematics are public. Calibration against reference recordings of a real unit is planned next.
 
@@ -85,4 +98,4 @@ No build step. Serve the folder statically (GitHub Pages works as-is).
 
 Patches, global settings and sequences are kept in localStorage. Patches can also be exported and imported as JSON.
 
-Patch format version 2 changed the cutoff, resonance and envelope knob units. Older patches convert automatically on load, so they sound the same.
+Patch formats 2 and 3 changed the knob units for cutoff, resonance, envelope and modulation amounts. Older patches convert automatically when they load, so their settings carry over.
