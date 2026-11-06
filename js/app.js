@@ -12,7 +12,9 @@ const DEF = { arpRate: .45, arpMode: 0, arpDir: 0, arpOct: 0, lfoRate: .45, lfoW
   o1Oct: 2, o1Wave: 1, sync: 0, o2Oct: 1, o2Freq: .5, o2Wave: 1, mix1: .6, mix2: 0, mixN: 0, cutoff: 0.673, res: 0.262,
   envAmt: .62, kbTrack: 0, attack: 0, decay: 0.397, sustain: .6, release: 0.291, volume: .7, vcaMode: 0, revMix: .15,
   hpf: 0, att: .5, glide: 0, fine: .5, modWheel: 0, instGain: 0, triplet: 0, legato: 0 };
-const GDEF = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bend: 2, extMode: 0, ppqnIn: 1, ppqnOut: 1, kbRange: 0,
+const GDEF = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bend: 2, extMode: 0, ppqnIn: 3, ppqnOut: 3, kbRange: 0,
+  multiTrig: 0, mtSpeed: 1, mtMs: 4, pvar: 0, swing: .5, arpRepeat: 1, keyReset: 0, seqTrMode: 0, seqKb: 1, seqDelay: 0,
+  outKeys: 1, outWheels: 1, outPanel: 1,
   local: 1, glideType: 0, gatedGlide: 1, transpose: 0, tapPersist: 0, velRange: 0, o2Range: 7, clkOutMode: 0, midiOutCh: -1,
   drift: .5, warm: 0, bleed: .3, os: 2, filt: 1, saw: 1, cpu: 'auto', extGain: .5, cables: 'show', scale: 'chromatic', root: 0, mask: Array(12).fill(true) };
 const PPQN = [1,2,3,4,5,6,7,8,9,10,11,12,24,48];
@@ -185,6 +187,7 @@ let uidN = 0;
 // ---------------------------------------------------------------- param set
 let saveT = 0;
 function setP(id, v, opt = {}) {
+  if (!opt.midi && state.p[id] !== v) ccOut(id, v);
   state.p[id] = v;
   const c = ctrls[id]; if (c) c.render();
   if (opt.send !== false) post({ t: 'p', k: id, v });
@@ -924,8 +927,11 @@ function pbDown(id, ptype) {
   if (id === 'hold') holdUsed = false;
   if (id === 'tap') { post({ t: 'tap' }); clearTimeout(tapT); tapT = setTimeout(() => { if (pressed.tap && !pressed.play && !pressed.hold) { post({ t: 'tapx' }); toast('Tap tempo off'); } }, 1000); }
   if (id === 'shift') { if (ptype === 'touch' || ptype === 'pen') { fineKeys.latch = !fineKeys.latch; } else fineKeys.shift = true; refreshLeds(); }
-  if (id === 'kbDn') post({ t: 'oct', d: -1 });
-  if (id === 'kbUp') post({ t: 'oct', d: 1 });
+  if (id === 'kbDn' || id === 'kbUp') {
+    const d = id === 'kbDn' ? -1 : 1; post({ t: 'oct', d });
+    const o = clamp(eng.oct + d, -2, 2);
+    if (midiOut && G.outPanel && o !== eng.oct) midiSend([0xB0 | outCh(), 89, [0, 26, 51, 77, 102][o + 2]]);
+  }
   if (pressed.play && pressed.hold && pressed.tap) { clearTimeout(panicT); panicT = setTimeout(() => { if (pressed.play && pressed.hold && pressed.tap) { post({ t: 'panic' }); keysUp(); toast('All notes off'); } }, 1000); }
   if (id === 'hold' || id === 'play' || id === 'tap') refreshLeds();
 }
@@ -954,7 +960,11 @@ function makeWheel(it, m) {
   };
   const setW = v => {
     w.v = v; render();
-    if (isBend) post({ t: 'bend', v }); else setP('modWheel', v);
+    if (isBend) {
+      const b = Math.abs(v) < 0.03 ? 0 : (v - Math.sign(v) * 0.03) / 0.97;   // centre deadband
+      post({ t: 'bend', v: b });
+      if (midiOut && G.outWheels) { const x = clamp(Math.round(b * 8192 + 8192), 0, 16383); midiSend([0xE0 | outCh(), x & 127, x >> 7]); }
+    } else setP('modWheel', v);
   };
   el.addEventListener('pointerdown', e => {
     e.preventDefault(); capture(el, e.pointerId); ensurePower();
@@ -1039,8 +1049,8 @@ function snapNote(note, allowed) {
 }
 // physical key -> { c: press count, s: the (snapped) note sent to the engine }
 const pressMap = {}, engCount = {};
-const sendOn = (s, vel) => { if (G.local) post({ t: 'on', k: s, v: vel, s: 'kb' }); else midiSend([0x90 | outCh(), clamp(s + eng.oct * 12, 0, 127), vel]); };
-const sendOff = s => { if (G.local) post({ t: 'off', k: s, s: 'kb' }); else midiSend([0x80 | outCh(), clamp(s + eng.oct * 12, 0, 127), 0]); };
+const sendOn = (s, vel) => { if (G.local) post({ t: 'on', k: s, v: vel, s: 'kb' }); else if (G.outKeys) midiSend([0x90 | outCh(), clamp(s + eng.oct * 12, 0, 127), vel]); };
+const sendOff = s => { if (G.local) post({ t: 'off', k: s, s: 'kb' }); else if (G.outKeys) midiSend([0x80 | outCh(), clamp(s + eng.oct * 12, 0, 127), 0]); };
 function keyDown(n, vel) {
   const pm = pressMap[n] || (pressMap[n] = { c: 0, s: null, gs: false });
   pm.c++; if (keyEls[n]) keyEls[n].classList.add('down');
@@ -1150,7 +1160,12 @@ const GSET = [
   { g: 1, p: 4, k: 'velRange', name: 'Velocity CV range', opts: ['-5 to +5 V', '0 to 10 V'] },
   { g: 1, p: 5, k: 'o2Range', name: 'Osc 2 frequency knob range', n: 19, lab: i => i + ' semitones' },
   { g: 1, p: 6, k: 'clkOutMode', name: 'Clock output', opts: ['only while running', 'always'] },
+  { g: 1, p: 7, k: 'multiTrig', name: 'Multi-trig (retrigger on legato notes)', opts: ['off', 'on'] },
+  { g: 1, p: 8, k: 'mtSpeed', name: 'Multi-trig reset speed', opts: ['slow (20 ms)', 'fast (4 ms)', 'custom'] },
   { g: 2, p: 0, k: 'midiOutCh', name: 'MIDI out channel (separate)', n: 16, lab: i => 'channel ' + (i + 1) },
+  { g: 2, p: 3, k: 'outKeys', name: 'MIDI out: keys', opts: ['off', 'on'] },
+  { g: 2, p: 2, k: 'outWheels', name: 'MIDI out: wheels', opts: ['off', 'on'] },
+  { g: 2, p: 1, k: 'outPanel', name: 'MIDI out: panel', opts: ['off', 'on'] },
 ];
 const PARAM_KEYS = [42, 44, 46, 49, 51, 54, 56, 58, 61, 63];
 const GROUP_KEYS = { 66: 1, 68: 2, 70: 3 };
@@ -1194,7 +1209,9 @@ const liteOn = () => G.cpu === 'lite' || (G.cpu === 'auto' && TOUCH_DEVICE);
 function applyGlobal() {
   post({ t: 'g', v: { midiCh: G.midiCh, midiClkIn: G.midiClkIn, midiClkOut: G.midiClkOut, prio: G.prio, bendUp: G.bend, bendDn: G.bend,
     extMode: G.extMode, ppqnIn: G.ppqnIn, ppqnOut: G.ppqnOut, kbRange: G.kbRange, glideType: G.glideType, gatedGlide: G.gatedGlide,
-    transpose: G.transpose, tapPersist: G.tapPersist, velRange: G.velRange, o2Range: G.o2Range, clkOutMode: G.clkOutMode, drift: G.drift, warm: G.warm, bleed: G.bleed, os: G.os, filt: G.filt, saw: G.saw, lite: liteOn() ? 1 : 0 } });
+    transpose: G.transpose, tapPersist: G.tapPersist, velRange: G.velRange, o2Range: G.o2Range, clkOutMode: G.clkOutMode,
+    multiTrig: G.multiTrig, mtMs: G.mtSpeed === 2 ? G.mtMs : G.mtSpeed ? 4 : 20, pvar: G.pvar, swing: G.swing, arpRepeat: G.arpRepeat,
+    keyReset: G.keyReset, seqTrMode: G.seqTrMode, seqKb: G.seqKb, seqDelay: G.seqDelay, drift: G.drift, warm: G.warm, bleed: G.bleed, os: G.os, filt: G.filt, saw: G.saw, lite: liteOn() ? 1 : 0 } });
   post({ t: 'p', k: 'instGain', v: extOn ? G.extGain : 0 });
   saveGlobal(); drawCables();
   $('#btnCables').textContent = 'Cables: ' + G.cables;
@@ -1209,6 +1226,17 @@ function buildSettings() {
     GS.optsOf(s).forEach((o, i) => { const op = mk('option', '', sel, o); op.value = i; });
     sel.value = G[s.k]; sel.addEventListener('change', () => { G[s.k] = +sel.value; applyGlobal(); });
   }
+  const F = $('#fwList'); F.innerHTML = '';
+  const frng = (name, k, min, max, step, fmt) => { const lab = mk('label', '', F, `<span>${name} <b class="v"></b></span>`); const r = mk('input', '', lab); r.type = 'range'; r.min = min; r.max = max; r.step = step; r.value = G[k]; const v = lab.querySelector('.v'); const show = () => v.textContent = fmt(G[k]); show(); r.addEventListener('input', () => { G[k] = +r.value; show(); applyGlobal(); }); };
+  const fopt = (name, k, opts) => { const lab = mk('label', '', F, `<span>${name}</span>`); const s = mk('select', '', lab); opts.forEach((t, i) => { const o = mk('option', '', s, t); o.value = i; }); s.value = G[k]; s.addEventListener('change', () => { G[k] = +s.value; applyGlobal(); }); };
+  frng('Pitch variance (random per note)', 'pvar', 0, 40, 0.1, v => '±' + v.toFixed(1) + ' cents');
+  frng('Arp/seq swing', 'swing', 0, 1, .01, v => Math.round(v * 100) + '%' + (Math.abs(v - .5) < .005 ? ' (straight)' : ''));
+  frng('Multi-trig reset time (custom speed)', 'mtMs', 4, 50, 1, v => v + ' ms');
+  fopt('Arp FWD/BKWD end notes', 'arpRepeat', ['play once', 'repeat']);
+  fopt('Arp/seq keyed timing reset', 'keyReset', ['off', 'on']);
+  fopt('Sequence transpose', 'seqTrMode', ['relative to first note', 'relative to middle C']);
+  fopt('Keyboard transposes sequence', 'seqKb', ['off', 'on']);
+  fopt('Delay sequence change to end of pass', 'seqDelay', ['off', 'on']);
   const E = $('#emuList'); E.innerHTML = '';
   const rng = (name, k, min, max, step) => { const lab = mk('label', '', E, `<span>${name}</span>`); const r = mk('input', '', lab); r.type = 'range'; r.min = min; r.max = max; r.step = step; r.value = G[k]; r.addEventListener('input', () => { G[k] = +r.value; applyGlobal(); }); };
   const opt = (name, k, opts) => { const lab = mk('label', '', E, `<span>${name}</span>`); const s = mk('select', '', lab); opts.forEach(([v, t]) => { const o = mk('option', '', s, t); o.value = v; }); s.value = G[k]; s.addEventListener('change', () => { G[k] = isNaN(+s.value) ? s.value : +s.value; applyGlobal(); }); };
@@ -1247,7 +1275,7 @@ async function toggleExt() {
 }
 
 // ---------------------------------------------------------------- MIDI
-let midi = null, midiOut = null, midiInId = load('midiIn', 'all'), midiOutId = load('midiOut', 'none');
+var midi = null, midiOut = null, midiInId = load('midiIn', 'all'), midiOutId = load('midiOut', 'none');   // var: read by setP before this line runs
 const outCh = () => (G.midiOutCh >= 0 ? G.midiOutCh : G.midiCh) & 15;
 function midiSend(bytes) { if (midiOut) try { midiOut.send(bytes); } catch {} }
 async function openMidi() {
@@ -1300,27 +1328,49 @@ function onMidi(ev) {
   else if (type === 0xE0) { const v = ((d2 << 7 | d1) - 8192) / 8192; post({ t: 'bend', v }); wheels.bend && wheels.bend.set(v); }
   else if (type === 0xB0) midiCC(d1, d2);
 }
+// The hardware transmits CCs only for its digitised controls (the seven pots its
+// microcontroller reads, plus switches and buttons); the analog pots send nothing.
+const CC_OUT = { modWheel: 1, lfoRate: 3, glide: 5, arpRate: 8, o2Freq: 12, o1Oct: 74, o2Oct: 75, sync: 77, arpMode: 91, arpDir: 92, arpOct: 93, legato: 94 };
+const ccLast = {};
+function ccOut(id, v) {
+  const c = CC_OUT[id]; if (!c || !midiOut) return;
+  if (c === 1 ? !G.outWheels : !G.outPanel) return;
+  let x;
+  if (id === 'arpRate' && eng.synced) {
+    const i = Math.round(v * (state.p.triplet ? 6 : 16)), j = CC90.findIndex(([t, k]) => t === (state.p.triplet ? 1 : 0) && k === i);
+    if (j < 0) return; x = [0, 5, 11, 16, 21, 27, 32, 37, 43, 48, 53, 59, 64, 69, 75, 80, 85, 91, 96, 101, 107, 112, 117, 123][j];
+    if (ccLast[90] !== x) { ccLast[90] = x; midiSend([0xB0 | outCh(), 90, x]); } return;
+  }
+  if (id === 'o1Oct' || id === 'o2Oct') x = v * 32;
+  else if (id === 'arpMode' || id === 'arpDir' || id === 'arpOct') x = [0, 43, 85][v];
+  else if (id === 'sync' || id === 'legato') x = v ? 127 : 0;
+  else x = Math.round(clamp(v, 0, 1) * 127);
+  if (ccLast[c] === x) return; ccLast[c] = x;
+  midiSend([0xB0 | outCh(), c, x]);
+}
+const setPm = (id, v) => setP(id, v, { midi: true });
 function midiCC(c, v) {
   const n7 = v / 127;
   const cont = { 1: 'modWheel', 3: 'lfoRate', 5: 'glide', 8: 'arpRate', 12: 'o2Freq' };
-  if (cont[c]) { cc14[c] = v; setP(cont[c], n7); return; }
+  if (cont[c]) { cc14[c] = v; setPm(cont[c], n7); return; }
   const lsb = { 33: 1, 35: 3, 37: 5, 40: 8, 44: 12 };
-  if (lsb[c]) { const m = lsb[c]; if (cc14[m] !== undefined) setP(cont[m], ((cc14[m] << 7) | v) / 16383); return; }
+  if (lsb[c]) { const m = lsb[c]; if (cc14[m] !== undefined) setPm(cont[m], ((cc14[m] << 7) | v) / 16383); return; }
   const tri = Math.min(2, Math.floor(v / 43)), quad = Math.min(3, v >> 5), on = v >= 64 ? 1 : 0;
   switch (c) {
-    case 65: if (!on) { if (glideSaved === null) { glideSaved = state.p.glide; setP('glide', 0); } } else if (glideSaved !== null) { setP('glide', glideSaved); glideSaved = null; } break;
+    case 65: if (!on) { if (glideSaved === null) { glideSaved = state.p.glide; setPm('glide', 0); } } else if (glideSaved !== null) { setPm('glide', glideSaved); glideSaved = null; } break;
     case 69: post({ t: 'sethold', v: on }); break;
     case 73: post({ t: 'setplay', v: on }); break;
-    case 74: setP('o1Oct', quad); break;
-    case 75: setP('o2Oct', quad); break;
-    case 77: setP('sync', on); break;
+    case 74: setPm('o1Oct', quad); break;
+    case 75: setPm('o2Oct', quad); break;
+    case 77: setPm('sync', on); break;
     case 85: G.glideType = tri; applyGlobal(); break;
     case 89: { const o = clamp(Math.round(v / 25.5) - 2, -2, 2); post({ t: 'oct', d: o - eng.oct }); break; }
-    case 90: { const [tr, i] = CC90[Math.min(23, Math.round(v / 5.33))]; setP('triplet', tr); setP('arpRate', tr ? i / 6 : i / 16); break; }
-    case 91: setP('arpMode', tri); break;
-    case 92: setP('arpDir', tri); break;
-    case 93: setP('arpOct', tri); break;
-    case 94: setP('legato', on); break;
+    case 90: { const [tr, i] = CC90[Math.min(23, Math.round(v / 5.33))]; setPm('triplet', tr); setPm('arpRate', tr ? i / 6 : i / 16); break; }
+    case 91: setPm('arpMode', tri); break;
+    case 92: setPm('arpDir', tri); break;
+    case 93: setPm('arpOct', tri); break;
+    case 94: setPm('legato', on); break;
+    case 95: G.multiTrig = on; applyGlobal(); break;
     case 103: G.gatedGlide = on; applyGlobal(); break;
     case 107: post({ t: 'g', v: { bendUp: Math.round(v / 5.12) } }); break;
     case 108: post({ t: 'g', v: { bendDn: Math.round(v / 5.12) } }); break;
@@ -1332,7 +1382,7 @@ function midiCC(c, v) {
 }
 function onEngineEvents(q) {
   for (const e of q) {
-    if (e.t === 'mo') midiSend(e.on ? [0x90 | outCh(), clamp(e.n, 0, 127), clamp(e.v || 100, 1, 127)] : [0x80 | outCh(), clamp(e.n, 0, 127), 0]);
+    if (e.t === 'mo') G.outKeys && midiSend(e.on ? [0x90 | outCh(), clamp(e.n, 0, 127), clamp(e.v || 100, 1, 127)] : [0x80 | outCh(), clamp(e.n, 0, 127), 0]);
     else if (e.t === 'clk') midiSend([0xF8]);
     else if (e.t === 'mstart') midiSend([0xFA]);
     else if (e.t === 'mstop') midiSend([0xFC]);

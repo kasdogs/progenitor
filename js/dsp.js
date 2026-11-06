@@ -45,27 +45,42 @@ function th(x) { // fast tanh
   const x2 = x * x; return x * (27 + x2) / (27 + 9 * x2);
 }
 const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
-// Transistor-style soft saturation: x / (1 + |x/Vs|^6)^(1/6). Essentially linear
-// well below Vs, compressing gradually toward it; a lower negative-side Vs makes
-// it slightly lopsided, which is where the even-harmonic warmth comes from.
-function tsat(x, vp, vn) {
-  const v = x >= 0 ? vp : vn, r = x / v, r2 = r * r, r6 = r2 * r2 * r2;
-  if (r6 < 1e-3) return x * (1 - r6 * (1 / 6 - r6 * (7 / 72)));   // series, exact to ~1e-10 here
-  return x / Math.cbrt(Math.sqrt(1 + r6));
-}
 // cos on [0, π], accurate to ~3e-6 (folded to [0, π/2], Taylor to x^8)
 function hcos(x) {
   const neg = x > 1.5707963267948966; if (neg) x = Math.PI - x;
   const x2 = x * x, c = 1 - x2 * (0.5 - x2 * (1 / 24 - x2 * (1 / 720 - x2 / 40320)));
   return neg ? -c : c;
 }
-// Mixer channel gain: plain taper to 80%, then a modest extra push into the stage.
-const mixGain = k => k + (k > 0.8 ? (k - 0.8) * 1.6 : 0);
+// OSC 2 FREQUENCY is read by the microcontroller, whose pot calibration includes a centre
+// deadband, so unison is easy to find: ±1% of travel around 12 o'clock reads as exactly 0.
+const o2Dev = k => { const d = k - 0.5; return Math.abs(d) < 0.01 ? 0 : (d - Math.sign(d) * 0.01) / 0.98; };
+// ---------------------------------------------------------------- CP3 mixer
+// The mixer is the CP3 console-panel circuit: three audio-taper level pots and
+// series resistors into one passive summing node, driving a discrete NPN/PNP
+// stage between asymmetric +12 V / -6 V rails (the original CP3 arrangement).
+// - Taper: g(k) = 2.2 k^1.65, so a 10 Vpp input reaches ~5 V peak, where the
+//   stage starts to overload, at about 1 o'clock (k ≈ 0.58), as the manual says.
+// - Passive bus: raising one channel loads the node and slightly ducks the
+//   others: the sum is divided by 1 + 0.08 Σg.
+// - Stage: clean below ~5 V, then a knee that is softer and higher on the
+//   positive side (+12 V rail) than the negative (-6 V), plus the CP3's pull of
+//   the positive peak up into a spike above ~4.3 V: even + odd harmonics.
+// Calibrated so one channel reads ~0.3% THD at 1 o'clock, ~1% at 70%, ~2% at
+// 80% and ~5% fully up (gentle above 1 o'clock, overdriven at the top).
+const mixG = k => 2.2 * Math.pow(k, 1.65);
+const CP3 = { vp: 11, vn: 9, spike: 0.6, load: 0.08 };
+function cp3(v) {
+  const V = v >= 0 ? CP3.vp : CP3.vn, r = v / V, r2 = r * r;
+  let y = v / Math.sqrt(Math.sqrt(1 + r2 * r2));
+  const w = v * 0.2 - 0.85;
+  if (w > 0) { const e = v * 0.2 - 1.4; y += CP3.spike * w * w * Math.exp(-e * e); }
+  return y;
+}
 // Calibration constants, fitted offline against the previous approved behaviour and
 // measured targets (see the commit notes): summing-stage saturation, wet level,
 // and the self-oscillation pitch trim (octaves per unit of feedback above k = 4).
 // trim tables: [feedback r = k/4, cents of correction]
-const TUNE = { mixVp: 7.4, mixVn: 6.72, tank: 0.9143, cvFeed: 0.006,
+const TUNE = { tank: 0.9143, cvFeed: 0.006,
   trimZ: [[0.9, 0], [1.0, 10], [1.071, 25], [1.171, 53.5], [1.286, 71.5]],
   trimH: [[0.9, 0], [1.0, 8], [1.071, 19], [1.171, 39], [1.286, 68]] };
 // Envelope stage time (s) against knob position, from owner measurements of the same envelope
@@ -105,6 +120,8 @@ function RES_TRIM(r, zdf) {
 let VP = 0.99;                                  // measured-saw rise fraction for the step in progress
 const SINE_K = 1.45, SINE_N = 1 / Math.tanh(1.45);   // triangle-to-sine shaper, ~1.5% THD
 class Osc {
+  static FS = 96000;
+  static GLITCH = true;
   constructor() { this.p = Math.random(); this.prev = 0; this.b = 0; this.a = 0; this.wrapT = -1; }
   static val(w, p, pw) {
     switch (w) {
@@ -127,6 +144,13 @@ class Osc {
     }
   }
   ev(t, h) { const u = 1 - t; this.b += h * u * u * 0.5; this.a -= h * t * t * 0.5; }          // PolyBLEP, step h
+  // Triangle turnaround glitch: while the saw core's capacitor flies back (~0.6 µs), the folder
+  // briefly sweeps back across its range, leaving a narrow spike at the trough. Its bandwidth is
+  // limited, so it is modelled as a 0.6 µs pulse of half the swing, band-limited as a BLEP pair.
+  blip(t) {
+    const w = Math.min(0.6e-6 * Osc.FS, 0.5), t2 = Math.min(t + w, 0.9999);
+    this.ev(t, 1); this.ev(t2, -1);
+  }
   evA(t, m) { const u = 1 - t; this.b += m * u * u * u / 6; this.a += m * t * t * t / 6; }     // PolyBLAMP, slope change m per sample
   seg(p, dt, t0, t1, w, pw) {
     let rem = (t1 - t0) * dt, t = t0;
@@ -143,7 +167,7 @@ class Osc {
         if (pulse) this.ev(t, -2); else this.evA(t, (-2 / (1 - pw) - 2 / pw) * dt);
       } else {
         p = 0; this.wrapT = t;
-        if (tri) this.evA(t, (2 / pw + 2 / (1 - pw)) * dt);
+        if (tri) { this.evA(t, (2 / pw + 2 / (1 - pw)) * dt); if (Osc.GLITCH) this.blip(t); }
         else { const h = w === 1 ? -2 : (w === 5 || pulse) ? 2 : 0; if (h) this.ev(t, h); }
       }
     }
@@ -244,15 +268,22 @@ class LadderZDF {
 }
 
 // ---------------------------------------------------------------- envelope
+// 911-style contour: RC charge toward an over-biased target (~1.25 of full scale) until the
+// flip-flop trips at full scale, then exponential discharge toward the sustain level, and on
+// release toward a floor trimmed slightly below 0 V (-0.01), so the VCA closes in finite time.
+// Stage coefficients are set so each stage completes (attack to the trip, decay/release to
+// within 1%) in the knob's stage time.
+const ENV_OVER = 1.25, ENV_FLOOR = -0.01;
+const ENV_KA = Math.log(ENV_OVER / (ENV_OVER - 1)), ENV_KD = Math.log(100);
 class ADSR {
   constructor() { this.v = 0; this.st = 0; this.g = false; }
   step(gate, ca, cd, cr, sus) {
     if (gate && !this.g) this.st = 1; else if (!gate && this.g) this.st = 3;
     this.g = gate;
     const st = this.st;
-    if (st === 1) { this.v += (1.3 - this.v) * ca; if (this.v >= 1) { this.v = 1; this.st = 2; } }
+    if (st === 1) { this.v += (ENV_OVER - this.v) * ca; if (this.v >= 1) { this.v = 1; this.st = 2; } }
     else if (st === 2) this.v += (sus - this.v) * cd;
-    else if (st === 3) { this.v -= this.v * cr; if (this.v < 1e-6) { this.v = 0; this.st = 0; } }
+    else if (st === 3) { this.v += (ENV_FLOOR - this.v) * cr; if (this.v <= 0) { this.v = 0; this.st = 0; } }
     return this.v;
   }
 }
@@ -284,22 +315,29 @@ class HB {
 // Parker & Välimäki (DAFx-11): per spring, a long cascade of stretched
 // allpasses (the low-frequency chirps) inside a damped, modulated feedback delay
 // with a DC blocker in the loop. The tank is a 3-spring, long-decay Belton
-// BMN3AB3B1B-family part (2.75–4 s decay per its datasheet), so there are three
-// springs of slightly different lengths. They run at half the base rate, which
-// is fine because their content stays below the ~4 kHz transition frequency.
-// A separate full-rate path of plain first-order allpasses adds the quieter
-// high-frequency chirps above the transition.
-const T60_SPRING = 3.3;   // per-spring loop setting; the summed tank measures ~2.75 s
+// BMN3AB31B part, a 3-spring long-decay tank (2.75–4 s per the Accutronics code), so there
+// are three springs. Per the Parker & Bilbao relations the shorter, stiffer springs have the
+// earlier echoes and the higher transition frequencies: round-trip echo delays of ~30.8,
+// ~23.1 and ~17.1 ms with transitions of ~4.6, ~5.7 and ~7.1 kHz (an illustrative
+// parameterisation of a 6" 3-spring tank, not a measured part). They run at half the base
+// rate; the stretched allpasses' transition is quantised to 24 kHz / 2M, giving 4 kHz for
+// the long spring and 6 kHz for the two shorter ones. A separate full-rate path of plain
+// first-order allpasses adds the quieter high-frequency chirps above the transition.
+const T60_SPRING = 4.75;   // per-spring loop setting (calibrated so the summed tank measures ~2.9 s)
 class Spring {
-  constructor(fs, len, fc, a, n, seed) {
+  // td: round-trip echo delay (s) at low frequencies, fc: transition frequency, a: allpass coefficient
+  constructor(fs, td, fc, a, n, seed) {
     this.fs = fs; this.N = n; this.M = Math.max(1, Math.round(fs / (2 * fc))); this.a = a;
     this.ap = []; for (let i = 0; i < n; i++) this.ap.push(new Float64Array(this.M));
     this.ai = 0;
-    this.base = len * fs; this.dlen = Math.ceil(this.base * 1.02) + 8;
+    // the chirp cascade's own low-frequency delay counts toward the echo time
+    const apDelay = n * this.M * (1 - a) / (1 + a);
+    this.base = Math.max(8, td * fs - apDelay); this.dlen = Math.ceil(this.base * 1.02) + 8;
     this.dl = new Float64Array(this.dlen); this.w = 0;
-    this.lp = 0; this.lpc = 1 - Math.exp(-TAU * 3600 / fs);
+    const fcEff = fs / (2 * this.M);
+    this.lp = 0; this.lpc = 1 - Math.exp(-TAU * 0.9 * fcEff / fs);
     this.dcR = Math.exp(-TAU * 40 / fs); this.dcX = 0; this.dcY = 0;
-    this.g = -Math.pow(10, -3 * len / T60_SPRING);
+    this.g = -Math.pow(10, -3 * td / T60_SPRING);
     this.ph = seed * TAU; this.phInc = TAU * (0.37 + seed * 0.1) / fs;
   }
   process(x) {
@@ -327,8 +365,8 @@ class SpringTank {
     const fh = fsB / 2;
     this.lite = !!lite;
     // lite: two springs with shorter chirp cascades and no high-frequency path
-    this.spr = lite ? [new Spring(fh, 0.0330, 4100, 0.62, 56, 0.1), new Spring(fh, 0.0410, 3900, 0.60, 52, 0.6)]
-      : [new Spring(fh, 0.0310, 4200, 0.62, 90, 0.1), new Spring(fh, 0.0368, 4000, 0.61, 86, 0.45), new Spring(fh, 0.0427, 3800, 0.60, 82, 0.8)];
+    this.spr = lite ? [new Spring(fh, 0.03075, 4583, 0.62, 56, 0.1), new Spring(fh, 0.02309, 5669, 0.61, 52, 0.6)]
+      : [new Spring(fh, 0.03075, 4583, 0.62, 90, 0.1), new Spring(fh, 0.02309, 5669, 0.61, 86, 0.45), new Spring(fh, 0.01709, 7069, 0.60, 82, 0.8)];
     this.dn = new HB(); this.up = new HB(); this.ph = 0; this.yh = 0;
     // high-frequency chirp path (full rate)
     this.hfN = 40; this.hfA = -0.34; this.hfS = new Float64Array(this.hfN);
@@ -348,7 +386,7 @@ class SpringTank {
     this.up.push(this.ph === 0 ? this.yh * 2 : 0);
     const lf = this.up.out();
     this.ph ^= 1;
-    if (this.lite) return lf;
+    if (this.lite) return lf * 0.826;   // level matched to the earlier tank voicing
     // high-frequency chirps: input above the transition, plain allpass cascade in a loop
     this.h1y = this.hpR * (this.h1y + x - this.h1x); this.h1x = x;
     this.h2y = this.hpR * (this.h2y + this.h1y - this.h2x); this.h2x = this.h1y;
@@ -360,7 +398,7 @@ class SpringTank {
     const y = this.hfDl[r];
     this.hfW = (this.hfW + 1) % this.hfDl.length;
     this.hfLp += (y - this.hfLp) * this.hfLpc;
-    return lf + y * 0.25;
+    return (lf + y * 0.25) * 0.812;
   }
 }
 
@@ -374,7 +412,7 @@ class Ctl {
     this.oct = 0; this.semi = 0;
     this.cv = 0; this.cvT = 0; this.cvS = 0; this.glideOn = false; this.glideFrom = 0;
     this.rcK = 1 - Math.exp(-1 / (0.001 * this.fs));   // ~1 ms smoothing after the pitch DAC
-    this.gate = false; this.dip = 0; this.vel = 100; this.note = -1;
+    this.gate = false; this.dip = 0; this.vel = 100; this.note = -1; this.pv = 0; this.pendSeq = false; this.activeSeq = 0;
     this.seqs = [[], [], []]; this.recFresh = true; this.pendTie = false; this.editing = false; this.cur = 0;
     this.running = false; this.idx = 0; this.dirSign = 1;
     this.qpos = 0; this.lastStep = -1; this.gateOffQ = -1; this.gateOffF = -1;
@@ -386,7 +424,7 @@ class Ctl {
     this.f = 0; this.led = 0; this.transNote = 60; this.gateDeadF = 0;
   }
   mode() { return this.e.S[PI.arpMode]; }
-  seqSel() { return this.e.S[PI.arpOct]; }
+  seqSel() { return this.pendSeq ? this.activeSeq : this.e.S[PI.arpOct]; }
   glideTime() { const k = this.e.S[PI.glide]; return k < 0.004 ? 0 : 0.002 * Math.pow(2000, k); }
   pick() {
     const h = this.held, pr = this.e.g.prio;
@@ -396,10 +434,13 @@ class Ctl {
   }
   setNote(n, retrig, overlap) {
     const gt = this.glideTime(), legato = this.e.S[PI.legato] > 0.5;
-    this.cvT = (n - 60) / 12;
+    if (this.note !== n || retrig) this.pv = (Math.random() * 2 - 1) * this.e.g.pvar / 1200;   // firmware pitch variance
+    this.cvT = (n - 60) / 12 + this.pv;
     if (gt > 0 && (!legato || overlap)) { this.glideOn = true; this.glideFrom = this.cv; }
     else { this.cv = this.cvT; this.glideOn = false; }
-    if (retrig && this.gate) this.dip = Math.round(this.fs * 0.0015);
+    // a retrigger while the gate is high drops the envelope gate for the multi-trig reset time
+    // (the envelope runs its release meanwhile, then re-attacks from wherever it got to)
+    if (retrig && this.gate) this.dip = Math.round(this.fs * this.e.g.mtMs / 1000);
     if (this.note !== n || retrig) {
       if (this.note >= 0) this.e.evq.push({ t: 'mo', on: 0, n: this.note });
       this.e.evq.push({ t: 'mo', on: 1, n, v: this.vel });
@@ -415,7 +456,8 @@ class Ctl {
     const live = this.held.filter(h => !h.sus || true);
     if (!live.length) { this.gateOff(); return; }
     const p = this.pick();
-    if (on) { if (p === newN) this.setNote(p, true, overlap); }
+    // overlapping (legato) key presses only retrigger the envelope with Multi-Trig on
+    if (on) { if (p === newN) this.setNote(p, !overlap || !!this.e.g.multiTrig, overlap); }
     else if (p !== this.note) this.setNote(p, false, true);
   }
   noteOn(key, vel, src) {
@@ -428,11 +470,12 @@ class Ctl {
     if (m === 2 && this.running && this.editing) { this.editNote(n); return; }
     if (m === 2 && !this.running) { this.recNote(n, !wasEmpty); this.direct(true, !wasEmpty, n); return; }
     if (this.play && m === 0) {
+      if (this.running && this.e.g.keyReset && !this.synced()) { this.qpos = 0; this.lastStep = -1; this.idx = 0; }
       if (this.hold) { if (this.latchFresh) { this.latch = []; this.latchFresh = false; } this.latch.push(n); }
       if (!this.running) this.startRun();
       return;
     }
-    if (this.play && m === 1) { this.transNote = n; if (!this.running) this.startRun(); return; }
+    if (this.play && m === 1) { if (this.e.g.seqKb) this.transNote = n; else this.transNote = this.seqRoot(this.seqs[this.seqSel()]); if (!this.running) this.startRun(); return; }
     this.direct(true, !wasEmpty, n);
   }
   noteOff(key, src) {
@@ -448,7 +491,7 @@ class Ctl {
     if (this.running) {
       if (this.editing) return;
       if (!this.hold && !this.held.length) { this.stopRun(); return; }
-      if (m === 1 && this.held.length) this.transNote = this.held[this.held.length - 1].n;
+      if (m === 1 && this.held.length && this.e.g.seqKb) this.transNote = this.held[this.held.length - 1].n;
       return;
     }
     this.direct(false);
@@ -491,7 +534,7 @@ class Ctl {
     if (!on) { if (this.running) this.stopRun(); else if (this.held.length) this.setNote(this.pick(), false, true); return; }
     const m = this.mode();
     if (m === 0 && (this.held.length || (this.hold && this.latch.length))) { this.gateOff(); this.startRun(); }
-    else if (m === 1 && this.held.length) { this.transNote = this.held[this.held.length - 1].n; this.gateOff(); this.startRun(); }
+    else if (m === 1 && this.held.length) { this.transNote = this.e.g.seqKb ? this.held[this.held.length - 1].n : this.seqRoot(this.seqs[this.seqSel()]); this.gateOff(); this.startRun(); }
   }
   btnPlay() {
     if (this.mode() === 2) {
@@ -541,9 +584,17 @@ class Ctl {
       if ((nu === 0 && (this.held.length || this.latch.length)) || (nu === 1 && this.held.length)) this.startRun();
     }
   }
-  seqChanged() { if (this.mode() === 2 && !this.running) this.recFresh = true; this.idx = 0; }
+  seqChanged(old) {
+    // "delay sequence change": a playing sequence finishes its pass before the new one starts
+    if (this.e.g.seqDelay && this.running && this.mode() === 1) { if (!this.pendSeq) { this.pendSeq = true; this.activeSeq = old; } return; }
+    this.pendSeq = false;
+    if (this.mode() === 2 && !this.running) this.recFresh = true; this.idx = 0;
+  }
   curStep() { return this.seqs[this.seqSel()][this.cur]; }
-  seqRoot(seq) { const s = seq.find(s => !s.r); return s ? s.n : 60; }
+  seqRoot(seq) {
+    if (this.e.g.seqTrMode === 1) return 60;            // transpose relative to middle C
+    const s = seq.find(s => !s.r); return s ? s.n : 60;  // relative to the first note (default)
+  }
   recNote(n, legato) {
     const seq = this.seqs[this.seqSel()];
     if (this.recFresh) { seq.length = 0; this.recFresh = false; }
@@ -580,7 +631,8 @@ class Ctl {
       const oc = this.e.S[PI.arpOct] + 1, dir = this.e.S[PI.arpDir];
       let list = [];
       for (let o = 0; o < oc; o++) for (const n of notes) list.push(n + 12 * o);
-      if (dir === 1 && list.length > 2) list = list.concat(list.slice(1, -1).reverse());
+      // FWD/BKWD: by default the top and bottom notes repeat at the turnarounds (global option)
+      if (dir === 1 && list.length > 1) list = this.e.g.arpRepeat ? list.concat(list.slice().reverse()) : list.length > 2 ? list.concat(list.slice(1, -1).reverse()) : list;
       let n;
       if (dir === 2) n = list[Math.floor(Math.random() * list.length)];
       else { if (this.idx >= list.length) this.idx = 0; n = list[this.idx]; this.idx = (this.idx + 1) % list.length; }
@@ -588,6 +640,7 @@ class Ctl {
       this.setNote(n, true, false);
       this.armGateOff(stepQ, div, false);
     } else {
+      if (this.pendSeq && (this.idx === 0 || this.idx >= this.seqs[this.activeSeq].length)) { this.pendSeq = false; this.idx = 0; }
       const seq = this.seqs[this.seqSel()], L = seq.length;
       if (!L) { this.gateOff(); return; }
       const tr = this.transNote - this.seqRoot(seq);
@@ -678,10 +731,18 @@ class Ctl {
       else qps = 20 * Math.pow(14, e.S[PI.arpRate]) / 60;
       this.qps = qps;
       this.qpos = Math.min(this.qpos + qps / fs, limit);
-      const sc = Math.floor(this.qpos / div + 1e-9);
+      // swing: each pair of steps is split long/short (50% = straight; 0-100% moves the split
+      // from 1/4 to 3/4 of the pair)
+      const sf = 0.25 + 0.5 * g.swing;
+      let sc, st0, sl;
+      if (Math.abs(sf - 0.5) < 1e-6) { sc = Math.floor(this.qpos / div + 1e-9); st0 = sc * div; sl = div; }
+      else {
+        const pr = 2 * div, pi = Math.floor(this.qpos / pr + 1e-9), x = this.qpos - pi * pr, f = sf * pr;
+        if (x < f) { sc = 2 * pi; st0 = pi * pr; sl = f; } else { sc = 2 * pi + 1; st0 = pi * pr + f; sl = pr - f; }
+      }
       if (sc !== this.lastStep) {
         this.lastStep = sc; this.led = 1;
-        if (this.running) this.doStep(sc * div, div);
+        if (this.running) this.doStep(st0, sl);
       }
       if (this.gateOffQ >= 0 && (this.qpos >= this.gateOffQ || this.f >= this.gateDeadF)) { this.gateOffQ = -1; this.gateOff(); }
       // clock outputs
@@ -704,7 +765,7 @@ class Ctl {
       if (t <= 0) { this.cv = this.cvT; this.glideOn = false; }
       else if (!(g.gatedGlide && !this.gate)) {
         const d = this.cvT - this.cv;
-        if (g.glideType === 2) { this.cv += d * (1 - Math.exp(-3 * n / (t * fs))); if (Math.abs(d) < 1e-5) { this.cv = this.cvT; this.glideOn = false; } }
+        if (g.glideType === 2) { this.cv += d * (1 - Math.exp(-6.9078 * n / (t * fs))); if (Math.abs(d) < 1e-5) { this.cv = this.cvT; this.glideOn = false; } }
         else {
           const step = n * (g.glideType === 0 ? 1 / (t * fs) : Math.max(Math.abs(this.cvT - this.glideFrom), 1e-4) / (t * fs));
           if (Math.abs(d) <= step) { this.cv = this.cvT; this.glideOn = false; } else this.cv += d > 0 ? step : -step;
@@ -734,8 +795,9 @@ class Progenitor extends AudioWorkletProcessor {
     const rr = () => Math.random() - 0.5;
     this.pw1 = 0.16 + rr() * 0.02; this.pw2 = 0.18 + rr() * 0.02;         // narrow pulse (measured ~16% / ~18%)
     this.tf1 = 0.5 + rr() * 0.008; this.tf2 = 0.5 + rr() * 0.008;         // triangle fold point
-    this.nLp = 0; this.dry1 = 0; this.rev1 = 0;
-    this.g = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bendUp: 2, bendDn: 2, extMode: 0, ppqnIn: 1, ppqnOut: 1,
+    this.nLp = 0; this.dry1 = 0; this.rev1 = 0; this.mixLp = 0;
+    this.g = { midiCh: 0, midiClkIn: 0, midiClkOut: 0, prio: 2, bendUp: 2, bendDn: 2, extMode: 0, ppqnIn: 3, ppqnOut: 3,
+      multiTrig: 0, mtMs: 4, pvar: 0, swing: 0.5, arpRepeat: 1, keyReset: 0, seqTrMode: 0, seqKb: 1, seqDelay: 0,
       kbRange: 0, glideType: 0, gatedGlide: 1, transpose: 0, tapPersist: 0, velRange: 0, o2Range: 7, clkOutMode: 0,
       drift: 0.5, warm: 0, bleed: 0.3, os: 2, filt: 1, saw: 1, lite: 0 };
     this.cc = {};   // cached coefficients
@@ -765,7 +827,7 @@ class Progenitor extends AudioWorkletProcessor {
     this.P[i] = v;
     if (this.disc[i] || !this.inited) this.S[i] = v;
     if (k === 'arpMode' && old !== v && this.inited) this.ctl.modeChanged(old, v);
-    if (k === 'arpOct' && old !== v && this.inited) this.ctl.seqChanged();
+    if (k === 'arpOct' && old !== v && this.inited) this.ctl.seqChanged(old);
   }
   // Every cable joins two jacks into one electrical net (the four mults are one
   // passive, unbuffered net). Each net is solved as a small circuit: every
@@ -880,6 +942,7 @@ class Progenitor extends AudioWorkletProcessor {
     const out = outputs[0], L = out[0], R = out[1];
     const inst = inputs[0] && inputs[0][0];
     const P = this.P, S = this.S, n = L.length, fs = this.fs, fsB = this.fsB, o = this.outs, c = this.ctl, g = this.g, os = this.OS;
+    Osc.FS = fs;
     for (let i = 0; i < n; i++) {
       // parameter smoothing (~8 ms)
       const lite = g.lite, ctl = (i & 3) === 0;
@@ -900,9 +963,9 @@ class Progenitor extends AudioWorkletProcessor {
       // per-base-sample derived values
       // stage times follow the measured knob law (see ENV_T): log-taper pots into a linear RC timer
       const cc = this.cc;
-      if (cc.a !== S[PI.attack]) { cc.a = S[PI.attack]; cc.ca = 1 - Math.exp(-1.466 / (ENV_T(cc.a, 0.0015) * fs)); }
-      if (cc.d !== S[PI.decay]) { cc.d = S[PI.decay]; cc.cd = 1 - Math.exp(-3.5 / (ENV_T(cc.d, 0.002) * fs)); }
-      if (cc.r !== S[PI.release]) { cc.r = S[PI.release]; cc.cr = 1 - Math.exp(-3.5 / (ENV_T(cc.r, 0.002) * fs)); }
+      if (cc.a !== S[PI.attack]) { cc.a = S[PI.attack]; cc.ca = 1 - Math.exp(-ENV_KA / (ENV_T(cc.a, 0.0015) * fs)); }
+      if (cc.d !== S[PI.decay]) { cc.d = S[PI.decay]; cc.cd = 1 - Math.exp(-ENV_KD / (ENV_T(cc.d, 0.002) * fs)); }
+      if (cc.r !== S[PI.release]) { cc.r = S[PI.release]; cc.cr = 1 - Math.exp(-ENV_KD / (ENV_T(cc.r, 0.002) * fs)); }
       const ca = cc.ca, cd = cc.cd, cr = cc.cr;
       const sus = S[PI.sustain];
       const lfoK = 14.214 * S[PI.lfoRate];
@@ -918,11 +981,16 @@ class Progenitor extends AudioWorkletProcessor {
       const base1 = cv + (S[PI.o1Oct] - 2) + fineV + bendV + this.drift[0] + warm;
       const syncOn = S[PI.sync] > 0.5;
       const range = syncOn ? Math.max(24, g.o2Range * 3) : g.o2Range;
-      const base2 = cv + (S[PI.o2Oct] - 1) + fineV + bendV + this.drift[1] + warm * 1.3 + (S[PI.o2Freq] - 0.5) * 2 * range / 12;
+      const base2 = cv + (S[PI.o2Oct] - 1) + fineV + bendV + this.drift[1] + warm * 1.3 + o2Dev(S[PI.o2Freq]) * 2 * range / 12;
       const sawW = g.saw ? 6 : 1;
       const w1 = S[PI.o1Wave] === 1 ? sawW : S[PI.o1Wave], w2 = S[PI.o2Wave] === 1 ? sawW : S[PI.o2Wave];
       const pb1 = w1 === 3 ? this.pw1 : 0.5, pb2 = w2 === 3 ? this.pw2 : 0.5;
-      const m1 = mixGain(S[PI.mix1]), m2 = mixGain(S[PI.mix2]), mN = mixGain(S[PI.mixN]);
+      if (cc.m1 !== S[PI.mix1] || cc.m2 !== S[PI.mix2] || cc.mN !== S[PI.mixN]) {
+        cc.m1 = S[PI.mix1]; cc.m2 = S[PI.mix2]; cc.mN = S[PI.mixN];
+        const g1 = mixG(cc.m1), g2 = mixG(cc.m2), gN = mixG(cc.mN), dk = 1 / (1 + CP3.load * (g1 + g2 + gN));
+        cc.g1 = g1 * dk; cc.g2 = g2 * dk; cc.gN = gN * dk;
+      }
+      const m1 = cc.g1, m2 = cc.g2, mN = cc.gN;
       // cutoff knob alone spans ~10 Hz to ~11 kHz; CV, envelope and keyboard tracking reach 20 kHz and beyond
       const cutBase = 3.3219 + 10.1033 * S[PI.cutoff];
       const kbt = [0.5, 0, 1][S[PI.kbTrack]];
@@ -935,9 +1003,10 @@ class Progenitor extends AudioWorkletProcessor {
       const resComp = cc.rc;
       const envAmtK = (S[PI.envAmt] - 0.5) * 2;
       const vcaMode = S[PI.vcaMode];
-      if (cc.h !== S[PI.hpf]) { cc.h = S[PI.hpf]; const hg = Math.tan(Math.PI * Math.min(20 * Math.pow(500, cc.h), fs * 0.24) / fs); cc.hpK = hg / (1 + hg); }
+      // high pass: 20 Hz to 20 kHz
+      if (cc.h !== S[PI.hpf]) { cc.h = S[PI.hpf]; const hg = Math.tan(Math.PI * Math.min(20 * Math.pow(1000, cc.h), fs * 0.24) / fs); cc.hpK = hg / (1 + hg); }
       const hpK = cc.hpK;
-      if (cc.fs !== fs) { cc.fs = fs; cc.kbrC = 1 - Math.exp(-1 / (0.0008 * fs)); cc.acA = Math.exp(-TAU * 1.6 / fs); cc.acB = Math.exp(-TAU * 1.6 / fsB); cc.nK = 1 - Math.exp(-TAU * 20000 / fs); }
+      if (cc.fs !== fs) { cc.fs = fs; cc.kbrC = 1 - Math.exp(-1 / (0.0008 * fs)); cc.acA = Math.exp(-TAU * 1.6 / fs); cc.acB = Math.exp(-TAU * 1.6 / fsB); cc.nK = 1 - Math.exp(-TAU * 20000 / fs); cc.mixK = 1 - Math.exp(-TAU * Math.min(25000, fs * 0.3) / fs); }
       const kbrC = cc.kbrC;
       const bleed = g.bleed * 0.5;
       const acA = cc.acA, acB = cc.acB;   // output coupling caps
@@ -979,7 +1048,7 @@ class Progenitor extends AudioWorkletProcessor {
         const trig = this.inp(I.trigIn, this.tap(O.gateOut, gateV)) > 2.3;
         const ev = this.env.step(trig, ca, cd, cr, sus);
         o[O.envPOut] = ev * 8; o[O.envNOut] = -ev * 8;
-        this.kbr = trig ? this.kbr + (1 - this.kbr) * kbrC : this.kbr - this.kbr * cr;
+        this.kbr = trig ? this.kbr + (1 - this.kbr) * kbrC : Math.max(0, this.kbr + (ENV_FLOOR - this.kbr) * cr);
 
         // oscillators
         const pwm = this.inp(I.pwmIn, 0) / 5 * 0.45 + ln * wAmt;
@@ -995,12 +1064,12 @@ class Progenitor extends AudioWorkletProcessor {
         const y2 = this.o2.step(f2p / (1 + f2p * 6e-7) / fs, w2, w2 === 0 ? this.tf2 : clamp(pb2 + pwm, 0.03, 0.97), syncOn ? this.o1.wrapT : -1) * 5;
         o[O.o1Out] = this.acOut(O.o1Out, y1, acA); o[O.o2Out] = this.acOut(O.o2Out, y2, acA);
 
-        // mixer (DC coupled). The summing stage is the main limiter, so one hot
-        // channel squashes the others ("lack of headroom", SOS review). A single
-        // channel stays near-linear to ~80% on its knob, then warms up gradually.
-        const sum = tsat(this.inp(I.mix1In, this.tap(O.o1Out, y1)) * m1, 14, 13) + tsat(this.inp(I.mix2In, this.tap(O.o2Out, y2)) * m2, 14, 13)
-          + tsat(this.inp(I.noiseIn, noise) * mN, 14, 13) + instV;
-        const mix = tsat(sum, TUNE.mixVp, TUNE.mixVn);
+        // mixer (DC coupled, see cp3): passive sum, then the discrete stage and its 3.3 nF
+        // compensation cap (a gentle top-end roll-off, here ~25 kHz)
+        const sum = this.inp(I.mix1In, this.tap(O.o1Out, y1)) * m1 + this.inp(I.mix2In, this.tap(O.o2Out, y2)) * m2
+          + this.inp(I.noiseIn, noise) * mN + instV;
+        this.mixLp += (cp3(sum) - this.mixLp) * cc.mixK;
+        const mix = os === 1 ? cp3(sum) : this.mixLp;
         o[O.mixOut] = mix;
 
         // ladder filter
@@ -1015,7 +1084,11 @@ class Progenitor extends AudioWorkletProcessor {
         // away from an envelope with nothing in the mixer. High passed at ~5 Hz: static settings add nothing.
         this.octLp += (oct - this.octLp) * (31.4 / fs);
         const xf = x * 0.12 + clamp(oct - this.octLp, -8, 8) * TUNE.cvFeed;
-        const vcf = (filtZ ? this.zdf.process(xf + (Math.random() - 0.5) * 2e-3, fc, res, fs) : this.lad.process(xf, fc, res, fs)) * 8.333;
+        // the 904A's regeneration loop is AC coupled, so resonance fades at the very bottom of the range (corner ~15 Hz:
+        // lower than some analyses suggest, because the manual's own Disco Tom patch rings at ~30-40 Hz)
+        // (modelled on the loop gain only, so it does not detune 1:1 tracking)
+        const resF = res * fc / Math.sqrt(fc * fc + 225);
+        const vcf = (filtZ ? this.zdf.process(xf + (Math.random() - 0.5) * 2e-3, fc, resF, fs) : this.lad.process(xf, fc, resF, fs)) * 8.333;
         o[O.vcfOut] = this.acOut(O.vcfOut, vcf, acA);
 
         // VCA
@@ -1024,7 +1097,9 @@ class Progenitor extends AudioWorkletProcessor {
           const a = this.inp(I.vcaAmtIn, 0) / 8;
           cvA = vcaMode === 2 ? clamp(a, 0, 1) : cvA * clamp(a, -1, 1);
         }
-        const vca = 8 * th(this.inp(I.vcaIn, this.tap(O.vcfOut, vcf)) * cvA / 8) + cvA * bleed;
+        // 902-style differential pair: the gain current scales the output, while the input pair itself
+        // compresses a hot signal, so the overdrive depends on the input level, not on the VCA level
+        const vca = cvA * (8 * th(this.inp(I.vcaIn, this.tap(O.vcfOut, vcf)) / 8) + bleed);
 
         // high pass (static, 1-pole)
         const hx = 9 * th(this.inp(I.hpfIn, 0) / 9);
@@ -1044,16 +1119,21 @@ class Progenitor extends AudioWorkletProcessor {
       const feed = !revPatched ? dry : os === 1 ? this.rev1 : this.decR.out();
       let rx = feed - this.preHpX; this.preHpY = 0.985 * (this.preHpY + rx); this.preHpX = feed;
       this.preLp += (this.preHpY - this.preLp) * 0.45;
-      let drive = th(this.preLp * 0.12) * 4;
+      // 905-style driver: one single-ended transistor into the 8 Ω coil, so it clips harder on one
+      // half-cycle than the other (even harmonics) when pushed
+      const dIn = this.preLp * 0.12;
+      let drive = (dIn >= 0 ? th(dIn) : 0.8 * th(dIn / 0.8)) * 4;
       if (this.kick) { drive += (Math.random() * 2 - 1) * 30 * this.kick; this.kick *= 0.97; if (this.kick < 0.01) this.kick = 0; }
       const wet = this.tank.process(drive) * TUNE.tank;
       this.revLp += (wet - this.revLp) * 0.5;
-      // recovery amp: rail-limited, so a full-level signal straight into REVERB IN tops out
-      // a few volts above a normal VCA feed instead of swamping the output stage
-      this.revLp = 3.5 * th(this.revLp / 3.5);
-      o[O.revOut] = this.acOut(O.revOut, this.revLp, acB);
+      // recovery amp (single-ended transistor stages): rail-limited (a raw oscillator into REVERB IN tops out a
+      // few volts above a normal feed) and slightly lopsided, which thickens the wet sound a little
+      this.revLp = this.revLp >= 0 ? 3.5 * th(this.revLp / 3.5) : 3.0 * th(this.revLp / 3.0);
+      // the 905's recovery electronics invert the signal
+      const wetOut = -this.revLp;
+      o[O.revOut] = this.acOut(O.revOut, wetOut, acB);
       const mx = S[PI.revMix];
-      const mixed = dry * Math.cos(mx * Math.PI / 2) + this.revLp * Math.sin(mx * Math.PI / 2) * 1.2;
+      const mixed = dry * Math.cos(mx * Math.PI / 2) + wetOut * Math.sin(mx * Math.PI / 2) * 1.2;
       o[O.euroOut] = this.acOut(O.euroOut, 8 * th(mixed / 8), acB);
       const vol = S[PI.volume];
       let y = mixed * vol * vol / 4;
@@ -1081,4 +1161,4 @@ class Progenitor extends AudioWorkletProcessor {
 }
 
 registerProcessor('progenitor', Progenitor);
-if (typeof module !== 'undefined') module.exports = { Progenitor, PN, OUTS, INS, MULTS, TUNE };
+if (typeof module !== 'undefined') module.exports = { Progenitor, PN, OUTS, INS, MULTS, TUNE, SpringTank };
