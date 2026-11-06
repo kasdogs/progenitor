@@ -479,7 +479,9 @@ let wheelsHidden = load('wheelsHidden', false);
 function paintWheelToggle() {
   const b = $('#whToggle'); b.textContent = wheelsHidden ? '›' : '‹';
   // shown wheels: the hider is anchored under them; hidden: it snaps into the scrollbar row
-  if (!wheelsHidden && document.body.classList.contains('L3')) { if (b.parentElement !== $('#whWrap')) $('#whWrap').appendChild(b); }
+  // (sideways phones keep it in the scrollbar row: there is no height to spare under the wheels)
+  const cl = document.body.classList;
+  if (!wheelsHidden && cl.contains('L3') && !cl.contains('land')) { if (b.parentElement !== $('#whWrap')) $('#whWrap').appendChild(b); }
   else if (b.parentElement !== $('#kbFoot')) $('#kbFoot').prepend(b);
   b.setAttribute('aria-expanded', String(!wheelsHidden)); b.setAttribute('aria-label', (wheelsHidden ? 'Show' : 'Hide') + ' pitch and mod wheels');
 }
@@ -635,24 +637,31 @@ function navActive() {
   sc.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse') release(); });
   if ('onscrollend' in window) sc.addEventListener('scrollend', () => { if (navLock) { clearTimeout(navLockT); navLockT = setTimeout(() => { navLock = null; }, 150); } });
 }
+// Desktop and tablet (mouse): one row of modules, scaled so the whole instrument fits the window,
+// width and height, with the keyboard docked at the bottom. No page scroll, so no scrollbar
+// appears and steals width (which used to wrap the last module onto a second row). Only when the
+// window is too narrow for a usable single row do the modules wrap into rows and scroll.
+const ONE_W = 2088, ONE_H = 745, PAD_V = 14 + 18;   // one-row panel size in layout units; #wrap padding
 function layout() {
-  const W = document.documentElement.clientWidth - 24;
+  const iw = document.documentElement.clientWidth, W = iw - 24;
   let u, mode;
-  const one = 2087, two = 1040, three = 346;
   const coarse = matchMedia('(pointer: coarse)').matches, H = window.innerHeight;
   const land = coarse && H < 560 && W + 24 > H;           // phone held sideways
-  if (W < 640 || land || (coarse && W / one < 0.56)) { u = 0.6; mode = 3; }   // phones and touch tablets: refined below
-  else if (W / one >= 0.56) { u = Math.min(1.05, W / one); mode = 1; }
-  else { u = Math.min(0.95, W / two); mode = 2; }
+  if (W < 640 || land || (coarse && W / ONE_W < 0.56)) { u = 0.6; mode = 3; }   // phones and touch tablets: refined below
+  else if (W / ONE_W >= 0.45) { u = W / ONE_W; mode = 1; }
+  else { u = Math.min(0.95, W / 1100); mode = 2; }
   document.body.classList.toggle('land', mode === 3 && land);
   document.body.classList.toggle('kbHide', mode === 3 && deckHidden);
   const sc = $('#wrap'), ratio = sc.scrollWidth > sc.clientWidth ? sc.scrollLeft / (sc.scrollWidth - sc.clientWidth) : 0;
   document.documentElement.style.setProperty('--u', u.toFixed(4));
   document.body.classList.toggle('L3', mode === 3);
-  document.body.classList.toggle('dock', mode !== 1);
-  const du = mode === 1 ? clamp(u * 1.25, .72, 1) : mode === 2 ? .7 : land ? clamp(H / 640, .5, .66) : clamp((W + 12) / 480, .55, .9);
+  document.body.classList.toggle('dock', true);
+  document.body.classList.toggle('fit', mode === 1);
+  // deck scale: by width, but never more than ~30% of the window height (desktop) or ~36% (sideways phone)
+  const du = mode === 3 ? (land ? clamp(H / 680, .5, .6) : clamp((W + 12) / 480, .55, .9))
+    : clamp(Math.min(W / ONE_W * 1.25, (0.3 * H - 40) / 312), .6, 1);
   document.documentElement.style.setProperty('--du', du.toFixed(3));
-  $('#keyboard').style.height = (mode === 3 ? 170 * du : 312 * du) + 'px';
+  $('#keyboard').style.height = (mode === 3 ? (land ? Math.min(170 * du, H * 0.3) : 170 * du) : 312 * du) + 'px';
   if (mode === 3) $('#keyboard').style.width = (19 * KEY_W) + 'px'; else $('#keyboard').style.width = '';
   document.body.classList.toggle('noWheels', mode === 3 && wheelsHidden);
   buildDeck(mode === 3);
@@ -663,11 +672,34 @@ function layout() {
   const deckH = $('#deck').offsetHeight, barH = $('.bar').offsetHeight;
   document.documentElement.style.setProperty('--deckH', deckH + 'px');
   document.documentElement.style.setProperty('--barH', barH + 'px');
+  document.body.classList.remove('side');
+  if (mode === 1) {
+    // fit both ways: the free height between the header and the docked keyboard caps the scale.
+    // Two arrangements are tried: the rear-panel modules in a row above the others, or stacked
+    // in a column at the right-hand end (better on short, wide windows); the larger scale wins.
+    const availH = H - barH - deckH - PAD_V - 6;
+    const uTop = Math.min(W / ONE_W, availH / ONE_H, 1.05);
+    document.body.classList.add('side'); buildRear(true);
+    const mu = 0.5; document.documentElement.style.setProperty('--u', mu);
+    const sw = $('#panel').offsetWidth / mu, sh = $('#panel').offsetHeight / mu;
+    const uSide = Math.min(W / sw, availH / sh, 1.05);
+    const side = uSide > uTop * 1.03;
+    if (!side) { document.body.classList.remove('side'); buildRear(false); }
+    u = clamp(side ? uSide : uTop, 0.3, 1.05);
+    document.documentElement.style.setProperty('--u', u.toFixed(4));
+    // belt and braces: if anything still overflows (fonts, rounding), shrink until it fits
+    for (let i = 0; i < 3; i++) {
+      const p = $('#panel'), ow = p.offsetWidth - W, oh = p.offsetHeight + PAD_V + barH + deckH - H;
+      if (ow <= 0 && oh <= 0) break;
+      u *= Math.min(ow > 0 ? W / (W + ow + 1) : 1, oh > 0 ? (p.offsetHeight - oh - 1) / p.offsetHeight : 1);
+      document.documentElement.style.setProperty('--u', u.toFixed(4));
+    }
+  }
   if (mode === 3) {
     // one row of modules (628 units tall; the rear-panel modules stack in a column at the end)
     // fills the free height; scroll sideways
     const avail = window.innerHeight - barH - deckH - 16;
-    zoom.fit = clamp(avail / 628, land ? 0.32 : 0.4, 1.1);
+    zoom.fit = clamp(avail / 628, land ? 0.18 : 0.4, 1.1);
     document.documentElement.style.setProperty('--u', zoom.fit.toFixed(4));
     zoom.unitsW = panel.offsetWidth / zoom.fit;
     zoom.set(zoom.fit * zoom.z, null);

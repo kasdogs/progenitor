@@ -306,6 +306,8 @@ body.L3 #scaleBar .sbl, body.L3 #scaleInfo { display: none; }
 
 /* ---------------------------------------------------------------- responsive */
 body.dock:not(.L3) #wrap { padding-bottom: calc(var(--deckH, 200px) + 20px); }
+body.fit { overflow: hidden; }
+body.fit #wrap { display: flex; flex-direction: column; justify-content: center; min-height: calc(100vh - var(--barH, 50px)); box-sizing: border-box; }
 body.dock .kbnav { display: block; }
 /* phone: the whole panel as one horizontal strip between the bar and the docked deck */
 body.L3 { overflow: hidden; height: 100dvh; }
@@ -398,15 +400,20 @@ body.L3.land.noWheels #deck { grid-template-columns: auto 1fr; grid-template-are
 body.L3.land #kbCol { display: contents; }
 body.L3.land #scaleBar { grid-area: sb; }
 body.L3.land #kbScroll { grid-area: kbd; }
+body.L3.land #keyboard { min-height: 0; }
 body.L3.land #lhcWrap { justify-self: start; }
 body.L3.land #kbRight2, body.L3.land #kbLeft2 { margin: 0; }
 
 /* phones: rear-panel modules (MIDI, CV, audio) stack in a column at the end of the strip */
-body.L3 #panel { flex-direction: row; align-items: flex-start; gap: calc(var(--u) * 14px); }
+body.L3 #panel, body.side #panel { flex-direction: row; align-items: flex-start; gap: calc(var(--u) * 14px); }
+body.side #panel { max-width: none; }
+body.side .mod-row { flex-wrap: nowrap; }
+body.side .rear-row { order: 2; flex-direction: row; justify-content: flex-start; align-items: center; gap: calc(var(--u) * 14px); align-self: stretch; flex-wrap: nowrap; }
+body.side .m-rear .mtext { white-space: normal; text-align: center; width: calc(var(--u) * 130px); }
 body.L3 .rear-row { order: 2; flex-direction: row; justify-content: flex-start; align-items: center; gap: calc(var(--u) * 14px); align-self: stretch; }
 .rear-col { display: flex; flex-direction: column; gap: calc(var(--u) * 14px); }
 .rear-sep { display: none; }
-body.L3 .rear-sep {
+body.L3 .rear-sep, body.side .rear-sep {
   display: block; flex: none; align-self: stretch; width: max(1px, calc(var(--u) * 2px));
   margin: calc(var(--u) * 24px) calc(var(--u) * 4px); background: #4a423b; border-radius: 1px;
 }

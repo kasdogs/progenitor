@@ -55,7 +55,9 @@ Plays with no cables; patching overrides the internal (normalled) routing, as on
   - **Inputs:** 90 kΩ for pitch and linear FM, 110 kΩ for envelope amount and high pass, 100 kΩ for everything else.
   - **Normals at outputs:** joining another output to an output jack also changes what that output feeds internally. For example, ATT OUT into FILTER OUTPUT changes what the VCA hears.
   - **Behaviour:** two audio outputs in the mult mix half and half. A control output joined to anything wins. Fighting control outputs meet in the middle. An input joined only to other inputs reads 0 V.
-- **Layouts:** one row on wide screens, two rows on tablets, and a scrolling strip on phones (portrait and landscape), with the keyboard and controls docked at the bottom.
+- **Layouts:** the keyboard and controls are always docked at the bottom.
+  - **Desktop:** one row of modules, scaled to fit the window's width and height, so nothing scrolls. On short, wide screens the rear-panel modules stack in a column at the right-hand end instead of a row on top, whichever gives the bigger scale. Only very narrow windows wrap the modules into rows and scroll.
+  - **Phones:** a scrolling strip (portrait and landscape). Held sideways, the controls, wheels and keys share one compact row, so the whole module strip fits the height.
   - **Phone header:** one row (patch, menu, power) plus a module navigator that jumps along the strip and highlights what's in view. MIDI, Settings, Save, Help and cable visibility move into the ⋯ menu.
   - **Strip layout:** after a thin divider at the end of the main modules, AUDIO sits above ARP/SEQ CV in one column, with MIDI to their right (the navigator's I/O button jumps there). Desktop and tablet keep the horizontal rear-panel row.
   - **Under the keys (phones):** an arrow under the pitch and mod wheels hides them, giving the keyboard more room (it then sits at the left of the scrollbar row, to bring them back), and a scrollbar beside it scrolls the keys (drag it, or tap to jump). Phone keys are 37 px wide.
